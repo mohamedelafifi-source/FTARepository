@@ -296,8 +296,8 @@ struct ContentView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                HStack(spacing: 0) {
+            ToolbarItemGroup(placement: .topBarLeading) {
+                HStack(spacing: 20) {
                     // PHOTOS MENU
                     Menu {
                         if let url = globals.selectedFolderURL {
@@ -452,8 +452,6 @@ struct ContentView: View {
                     }
                     .font(.footnote)
 
-                    Spacer(minLength: 0)
-
                     // DATA ENTRY MENU
                     Menu {
                         Button("Paste/Parse Bulk Data") {
@@ -474,8 +472,6 @@ struct ContentView: View {
                     }
                     .font(.footnote)
 
-                    Spacer(minLength: 0)
-
                     // VIEW MENU
                     Menu {
                         Button {
@@ -494,8 +490,6 @@ struct ContentView: View {
                         Text("View")
                     }
                     .font(.footnote)
-
-                    Spacer(minLength: 0)
 
                     // FILE HANDLING MENU
                     Menu {
@@ -546,7 +540,6 @@ struct ContentView: View {
                     }
                     .font(.footnote)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         
@@ -740,9 +733,13 @@ struct ContentView: View {
         .navigationViewStyle(StackNavigationViewStyle())
     }
 
+    var body: some View {
+        NavigationStack {
+            contentHost
+        }
+    }
 }
 
 #Preview {
     ContentView()
 }
-
