@@ -144,45 +144,9 @@ struct ContentView: View {
     private var contentHost: some View {
         
         VStack(spacing: 16) {
-            // Just to have a view
             Text("Welcome to Family Tree")
-                .font(.caption)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
-            
-            Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Quick Actions")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    Button {
-                        if FamilyDataManager.shared.membersDictionary.isEmpty {
-                            alertMessage = "No family data loaded. Please add or parse data first."
-                            showAlert = true
-                        } else {
-                            showFamilyTree = true
-                        }
-                    } label: {
-                        Label("Family Tree", systemImage: "person.3")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        showBulkEditor = true
-                    } label: {
-                        Label("Paste/Parse", systemImage: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        showFolderPicker = true
-                    } label: {
-                        Label("Select Folder", systemImage: "folder")
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding(.top, 8)
         }
         /*=====No Need to show the title
         .navigationTitle("Family Tree")
@@ -331,116 +295,64 @@ struct ContentView: View {
                 }
             }
         }
-    }
-    //=================
-    //START OF THE APP
-    //=================
-    var body: some View {
-        NavigationStack {
-            contentHost
-                .toolbar {
-                    // LEADING GROUP
-                    ToolbarItemGroup(placement: .navigationBarLeading) {
-                        Button {
-                            // no action
-                        } label: {
-                            Image(systemName: "figure.2.and.child.holdinghands")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 0) {
+                    // PHOTOS MENU
+                    Menu {
+                        if let url = globals.selectedFolderURL {
+                            Text("Folder: \(url.lastPathComponent)").font(.caption2)
+                        } else {
+                            Text("Folder: none").foregroundColor(.secondary).font(.caption2)
                         }
-                        Menu("Main") {
-                            //================
-                            // PHOTOS
-                            //================
-                            Text("Photos").font(.caption)
-                            if let url = globals.selectedFolderURL {
-                                Text("Folder: \(url.lastPathComponent)")
-                            } else {
-                                Text("Folder: none").foregroundColor(.secondary)
+                        Divider()
+
+                        Button("Select Storage Folder…") { showFolderPicker = true }
+
+                        Button("Create Photo Index in Folder") {
+                            guard let folder = globals.selectedFolderURL else {
+                                alertMessage = "Please select a storage folder first."
+                                showAlert = true
+                                return
                             }
-                            Divider()
-
-                            Button("Select Storage Folder…") { showFolderPicker = true }
-
-                            Button("Create Photo Index in Folder") {
-                                guard let folder = globals.selectedFolderURL else {
-                                    alertMessage = "Please select a storage folder first."
-                                    showAlert = true
-                                    return
+                            do {
+                                let indexURL = folder.appendingPathComponent("photo-index.json")
+                                if FileManager.default.fileExists(atPath: indexURL.path) {
+                                    throw CocoaError(.fileWriteFileExists)
                                 }
-                                do {
-                                    let indexURL = folder.appendingPathComponent("photo-index.json")
-                                    if FileManager.default.fileExists(atPath: indexURL.path) {
-                                        throw CocoaError(.fileWriteFileExists)
-                                    }
-                                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                                    globals.selectedJSONURL = url
-                                    successMessage = "Photo index created at “\(url.lastPathComponent)”."
-                                    showSuccess = true
-                                } catch {
-                                    let nsErr = error as NSError
-                                    if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSFileWriteFileExistsError {
-                                        alertMessage = "A photo index already exists in the selected folder."
-                                    } else {
-                                        alertMessage = error.localizedDescription
-                                    }
-                                    showAlert = true
-                                }
-                            }
-                            .disabled(globals.selectedFolderURL == nil)
-                            .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
-
-                            Divider()
-
-                            Button("Import a Photo …") {
-                                guard globals.selectedFolderURL != nil else {
-                                    alertMessage = "Select a storage folder first."
-                                    showAlert = true
-                                    return
-                                }
-                                tempNameInput = ""
-                                showNamePrompt = true
-                            }
-                            .disabled(globals.selectedFolderURL == nil)
-                            .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
-
-                            Button("Browse All Photos") {
-                                if let folder = globals.selectedFolderURL {
-                                    if globals.selectedJSONURL == nil {
-                                        do {
-                                            let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                                            globals.selectedJSONURL = url
-                                        } catch {
-                                            alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                                            showAlert = true
-                                            return
-                                        }
-                                    }
-                                    guard globals.selectedJSONURL != nil else {
-                                        alertMessage = "Select a storage folder and photo index first."
-                                        showAlert = true
-                                        return
-                                    }
-                                    showGallery = true
+                                let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                                globals.selectedJSONURL = url
+                                successMessage = "Photo index created at “\(url.lastPathComponent)”."
+                                showSuccess = true
+                            } catch {
+                                let nsErr = error as NSError
+                                if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSFileWriteFileExistsError {
+                                    alertMessage = "A photo index already exists in the selected folder."
                                 } else {
-                                    alertMessage = "Select a storage folder first."
-                                    showAlert = true
+                                    alertMessage = error.localizedDescription
                                 }
+                                showAlert = true
                             }
-                            .disabled(globals.selectedFolderURL == nil)
-                            .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
+                        }
+                        .disabled(globals.selectedFolderURL == nil)
+                        .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
 
-                            Button("Browse Tree Photos") {
-                                // Ensure we have family data
-                                if FamilyDataManager.shared.membersDictionary.isEmpty {
-                                    alertMessage = "No family data loaded. Please add or parse data first."
-                                    showAlert = true
-                                    return
-                                }
-                                // Ensure folder and index are selected
-                                guard let folder = globals.selectedFolderURL else {
-                                    alertMessage = "Select a storage folder first (Photos menu)."
-                                    showAlert = true
-                                    return
-                                }
+                        Divider()
+
+                        Button("Import a Photo …") {
+                            guard globals.selectedFolderURL != nil else {
+                                alertMessage = "Select a storage folder first."
+                                showAlert = true
+                                return
+                            }
+                            tempNameInput = ""
+                            showNamePrompt = true
+                        }
+                        .disabled(globals.selectedFolderURL == nil)
+                        .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
+
+                        Button("Browse All Photos") {
+                            if let folder = globals.selectedFolderURL {
                                 if globals.selectedJSONURL == nil {
                                     do {
                                         let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
@@ -451,211 +363,193 @@ struct ContentView: View {
                                         return
                                     }
                                 }
-                                guard let _ = globals.selectedJSONURL else {
-                                    alertMessage = "Select a storage folder and photo index first (Photos menu)."
+                                guard globals.selectedJSONURL != nil else {
+                                    alertMessage = "Select a storage folder and photo index first."
                                     showAlert = true
                                     return
                                 }
-                                // Compute visible names from current tree
-                                let manager = FamilyDataManager.shared
-                                let groups: [LevelGroup]
-                                if let focus = manager.focusedMemberId {
-                                    groups = manager.getConnectedFamilyOf(memberId: focus)
-                                } else {
-                                    groups = manager.getAllLevels()
-                                }
-                                let names = groups.flatMap { $0.members.map { $0.name } }
-                                filteredNamesForPhotos = Array(Set(names)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                                showGallery = true
+                            } else {
+                                alertMessage = "Select a storage folder first."
+                                showAlert = true
+                            }
+                        }
+                        .disabled(globals.selectedFolderURL == nil)
+                        .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : "")
 
-                                if filteredNamesForPhotos.isEmpty {
-                                    alertMessage = "No visible names in the current tree."
+                        Button("Browse Tree Photos") {
+                            // Ensure we have family data
+                            if FamilyDataManager.shared.membersDictionary.isEmpty {
+                                alertMessage = "No family data loaded. Please add or parse data first."
+                                showAlert = true
+                                return
+                            }
+                            // Ensure folder and index are selected
+                            guard let folder = globals.selectedFolderURL else {
+                                alertMessage = "Select a storage folder first (Photos menu)."
+                                showAlert = true
+                                return
+                            }
+                            if globals.selectedJSONURL == nil {
+                                do {
+                                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                                    globals.selectedJSONURL = url
+                                } catch {
+                                    alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
                                     showAlert = true
                                     return
                                 }
-                                // Validate index contents
-                                if let idxURL = globals.selectedJSONURL {
-                                    do {
-                                        let indexNames = try readIndexNames(from: idxURL)
-                                        if indexNames.isEmpty {
-                                            alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
-                                            showAlert = true
-                                            return
-                                        }
-                                        let visible = Set(filteredNamesForPhotos)
-                                        let intersection = visible.intersection(indexNames)
-                                        if intersection.isEmpty {
-                                            alertMessage = "None of the visible names are present in the photo index.\nNames: \(filteredNamesForPhotos.joined(separator: ", "))"
-                                            showAlert = true
-                                            return
-                                        }
-                                    } catch {
-                                        alertMessage = "Failed to read photo index: \(error.localizedDescription)"
+                            }
+                            guard let _ = globals.selectedJSONURL else {
+                                alertMessage = "Select a storage folder and photo index first (Photos menu)."
+                                showAlert = true
+                                return
+                            }
+                            // Compute visible names from current tree
+                            let manager = FamilyDataManager.shared
+                            let groups: [LevelGroup]
+                            if let focus = manager.focusedMemberId {
+                                groups = manager.getConnectedFamilyOf(memberId: focus)
+                            } else {
+                                groups = manager.getAllLevels()
+                            }
+                            let names = groups.flatMap { $0.members.map { $0.name } }
+                            filteredNamesForPhotos = Array(Set(names)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+                            if filteredNamesForPhotos.isEmpty {
+                                alertMessage = "No visible names in the current tree."
+                                showAlert = true
+                                return
+                            }
+                            // Validate index contents
+                            if let idxURL = globals.selectedJSONURL {
+                                do {
+                                    let indexNames = try readIndexNames(from: idxURL)
+                                    if indexNames.isEmpty {
+                                        alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
                                         showAlert = true
                                         return
                                     }
-                                }
-                                showFilteredPhotos = true
-                            }
-                            .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
-                            .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : (dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : ""))
-
-                            Divider()
-
-                            //============
-                            // DATA ENTRY
-                            //============
-                            Text("Data Entry").font(.caption)
-                            Button("Paste/Parse Bulk Data") {
-                                showBulkEditor = true
-                            }
-                            Divider()
-                            Button("Individual Entry") {
-                                originalMembers = FamilyDataManager.shared.membersDictionary
-                                showIndividualEntry = true
-                            }
-                            Divider()
-                            Button("Clear All Data", role: .destructive) {
-                                showDataEntryClearAlert = true
-                            }
-                            .disabled(FamilyDataManager.shared.membersDictionary.isEmpty)
-
-                            Divider()
-
-                            //========
-                            // VIEW
-                            //========
-                            Text("View").font(.caption)
-                            Button {
-                                if FamilyDataManager.shared.membersDictionary.isEmpty {
-                                    alertMessage = "No family data loaded. Please add or parse data first."
-                                    showAlert = true
-                                } else {
-                                    showFamilyTree = true
-                                }
-                            } label: {
-                                Label("Show Family Tree", systemImage: "person.3")
-                            }
-                            .disabled(dataManager.membersDictionary.isEmpty)
-                            .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
-
-                            Divider()
-
-                            //=====================
-                            // FILE HANDLING
-                            //=====================
-                            Text("File Handling").font(.caption)
-                            Button("Save to Text File") {
-                                let text = dataManager.generateExportText()
-                                queueExport(.text(text, name: "FamilyData"))
-                            }
-                            .disabled(dataManager.membersDictionary.isEmpty)
-                            .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
-                            Button("Save to a Tree File") {
-                                do {
-                                    let members = Array(dataManager.membersDictionary.values)
-                                    let data = try JSONEncoder().encode(members)
-                                    if let jsonString = String(data: data, encoding: .utf8) {
-                                        queueExport(.json(jsonString, name: "FTname.json"))
+                                    let visible = Set(filteredNamesForPhotos)
+                                    let intersection = visible.intersection(indexNames)
+                                    if intersection.isEmpty {
+                                        alertMessage = "None of the visible names are present in the photo index.\nNames: \(filteredNamesForPhotos.joined(separator: ", "))"
+                                        showAlert = true
+                                        return
                                     }
                                 } catch {
-                                    alertMessage = "Failed to encode JSON: \(error.localizedDescription)"
+                                    alertMessage = "Failed to read photo index: \(error.localizedDescription)"
                                     showAlert = true
+                                    return
                                 }
                             }
-                            .disabled(dataManager.membersDictionary.isEmpty)
-                            .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
-                            Button("Append from JSON file") {
-                                // Close other sheets if any
-                                showGallery = false
-                                showFilteredPhotos = false
-                                showFileHandling = false
-                                showFolderPicker = false
-                                showJSONPicker = false
-                                // Present UIKit document picker
-                                DispatchQueue.main.async { showUIKitPickerForAppend = true }
-                            }
-                            Button("Load from a Tree File") {
-                                // Close other sheets if any
-                                showGallery = false
-                                showFilteredPhotos = false
-                                showFileHandling = false
-                                showFolderPicker = false
-                                showJSONPicker = false
-                                // Present UIKit document picker
-                                DispatchQueue.main.async { showUIKitPickerForLoad = true }
-                            }
+                            showFilteredPhotos = true
                         }
+                        .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
+                        .help(globals.selectedFolderURL == nil ? "Select a storage folder first" : (dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : ""))
+                    } label: {
+                        Text("Photos")
                     }
-                }
-                .sheet(isPresented: $showUIKitPickerForLoad) {
-                    DocumentPicker(contentTypes: [.json], allowsMultipleSelection: false) { urls in
-                        showUIKitPickerForLoad = false
-                        guard let url = urls.first else { return }
-                        guard isLikelyJSON(url) else {
-                            alertMessage = "Please select a .json file."
-                            showAlert = true
-                            return
+                    .font(.footnote)
+
+                    Spacer(minLength: 0)
+
+                    // DATA ENTRY MENU
+                    Menu {
+                        Button("Paste/Parse Bulk Data") {
+                            showBulkEditor = true
                         }
-                        do {
-                            let imported = try loadMembers(from: url)
-                            dataManager.membersDictionary.removeAll()
-                            for m in imported { dataManager.membersDictionary[m.name] = m }
-                            dataManager.linkFamilyRelations()
-                            dataManager.assignLevels()
-                            successMessage = "Loaded \(imported.count) members from \(url.lastPathComponent)"
-                            showSuccess = true
-                        } catch {
-                            alertMessage = "Failed to load JSON: \(error.localizedDescription)"
-                            showAlert = true
+                        Divider()
+                        Button("Individual Entry") {
+                            originalMembers = FamilyDataManager.shared.membersDictionary
+                            showIndividualEntry = true
                         }
-                    } onCancel: {
-                        showUIKitPickerForLoad = false
+                        Divider()
+                        Button("Clear All Data", role: .destructive) {
+                            showDataEntryClearAlert = true
+                        }
+                        .disabled(FamilyDataManager.shared.membersDictionary.isEmpty)
+                    } label: {
+                        Text("Data Entry")
                     }
-                }
-                .sheet(isPresented: $showUIKitPickerForAppend) {
-                    DocumentPicker(contentTypes: [.json], allowsMultipleSelection: false) { urls in
-                        showUIKitPickerForAppend = false
-                        guard let url = urls.first else { return }
-                        guard isLikelyJSON(url) else {
-                            alertMessage = "Please select a .json file."
-                            showAlert = true
-                            return
+                    .font(.footnote)
+
+                    Spacer(minLength: 0)
+
+                    // VIEW MENU
+                    Menu {
+                        Button {
+                            if FamilyDataManager.shared.membersDictionary.isEmpty {
+                                alertMessage = "No family data loaded. Please add or parse data first."
+                                showAlert = true
+                            } else {
+                                showFamilyTree = true
+                            }
+                        } label: {
+                            Label("Show Family Tree", systemImage: "person.3")
                         }
-                        do {
-                            let imported = try loadMembers(from: url)
-                            var appended = 0
-                            for member in imported {
-                                if var existing = dataManager.membersDictionary[member.name] {
-                                    let parents = member.parents.filter { !existing.parents.contains($0) }
-                                    let spouses = member.spouses.filter { !existing.spouses.contains($0) }
-                                    let children = member.children.filter { !existing.children.contains($0) }
-                                    let siblings = member.siblings.filter { !existing.siblings.contains($0) }
-                                    if !parents.isEmpty || !spouses.isEmpty || !children.isEmpty || !siblings.isEmpty {
-                                        existing.parents.append(contentsOf: parents)
-                                        existing.spouses.append(contentsOf: spouses)
-                                        existing.children.append(contentsOf: children)
-                                        existing.siblings.append(contentsOf: siblings)
-                                        dataManager.membersDictionary[member.name] = existing
-                                        appended += 1
-                                    }
-                                } else {
-                                    dataManager.membersDictionary[member.name] = member
-                                    appended += 1
+                        .disabled(dataManager.membersDictionary.isEmpty)
+                        .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
+                    } label: {
+                        Text("View")
+                    }
+                    .font(.footnote)
+
+                    Spacer(minLength: 0)
+
+                    // FILE HANDLING MENU
+                    Menu {
+                        Button("Save to Text File") {
+                            let text = dataManager.generateExportText()
+                            queueExport(.text(text, name: "FamilyData"))
+                        }
+                        .disabled(dataManager.membersDictionary.isEmpty)
+                        .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
+
+                        Button("Save to a Tree File") {
+                            do {
+                                let members = Array(dataManager.membersDictionary.values)
+                                let data = try JSONEncoder().encode(members)
+                                if let jsonString = String(data: data, encoding: .utf8) {
+                                    queueExport(.json(jsonString, name: "FTname.json"))
                                 }
+                            } catch {
+                                alertMessage = "Failed to encode JSON: \(error.localizedDescription)"
+                                showAlert = true
                             }
-                            dataManager.linkFamilyRelations()
-                            dataManager.assignLevels()
-                            successMessage = "Appended/merged \(appended) members from \(url.lastPathComponent)"
-                            showSuccess = true
-                        } catch {
-                            alertMessage = "Failed to append JSON: \(error.localizedDescription)"
-                            showAlert = true
                         }
-                    } onCancel: {
-                        showUIKitPickerForAppend = false
+                        .disabled(dataManager.membersDictionary.isEmpty)
+                        .help(dataManager.membersDictionary.isEmpty ? "Add or parse family data first" : "")
+
+                        Button("Append from JSON file") {
+                            // Close other sheets if any
+                            showGallery = false
+                            showFilteredPhotos = false
+                            showFileHandling = false
+                            showFolderPicker = false
+                            showJSONPicker = false
+                            // Present UIKit document picker
+                            DispatchQueue.main.async { showUIKitPickerForAppend = true }
+                        }
+                        Button("Load from a Tree File") {
+                            // Close other sheets if any
+                            showGallery = false
+                            showFilteredPhotos = false
+                            showFileHandling = false
+                            showFolderPicker = false
+                            showJSONPicker = false
+                            // Present UIKit document picker
+                            DispatchQueue.main.async { showUIKitPickerForLoad = true }
+                        }
+                    } label: {
+                        Text("File Handling")
                     }
+                    .font(.footnote)
                 }
+                .frame(maxWidth: .infinity)
+            }
         }
+        
         // Removed old SwiftUI .fileImporter modifiers for showJSONPickerForLoad and showJSONPickerForAppend
         
         //=========
