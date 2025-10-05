@@ -6,63 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXContainerItemProxy section */
-		A2841DC12E8C2E72001C1B94 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A2841DAB2E8C2E71001C1B94 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A2841DB22E8C2E71001C1B94;
-			remoteInfo = MyFamilyTree;
-		};
-		A2841DCB2E8C2E72001C1B94 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A2841DAB2E8C2E71001C1B94 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A2841DB22E8C2E71001C1B94;
-			remoteInfo = MyFamilyTree;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		A2841DB32E8C2E71001C1B94 /* MyFamilyTree.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyFamilyTree.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2841DC02E8C2E72001C1B94 /* MyFamilyTreeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyFamilyTreeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2841DCA2E8C2E72001C1B94 /* MyFamilyTreeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyFamilyTreeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A29B84DA2E909E5D001EEFFD /* Exceptions for "MyFamilyTree" folder in "MyFamilyTree" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A2841DB22E8C2E71001C1B94 /* MyFamilyTree */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A2841DB52E8C2E71001C1B94 /* MyFamilyTree */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A29B84DA2E909E5D001EEFFD /* Exceptions for "MyFamilyTree" folder in "MyFamilyTree" target */,
+			);
 			path = MyFamilyTree;
-			sourceTree = "<group>";
-		};
-		A2841DC32E8C2E72001C1B94 /* MyFamilyTreeTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyFamilyTreeTests;
-			sourceTree = "<group>";
-		};
-		A2841DCD2E8C2E72001C1B94 /* MyFamilyTreeUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyFamilyTreeUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A2841DB02E8C2E71001C1B94 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A2841DBD2E8C2E72001C1B94 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A2841DC72E8C2E72001C1B94 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -76,8 +46,6 @@
 			isa = PBXGroup;
 			children = (
 				A2841DB52E8C2E71001C1B94 /* MyFamilyTree */,
-				A2841DC32E8C2E72001C1B94 /* MyFamilyTreeTests */,
-				A2841DCD2E8C2E72001C1B94 /* MyFamilyTreeUITests */,
 				A2841DB42E8C2E71001C1B94 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,8 +54,6 @@
 			isa = PBXGroup;
 			children = (
 				A2841DB32E8C2E71001C1B94 /* MyFamilyTree.app */,
-				A2841DC02E8C2E72001C1B94 /* MyFamilyTreeTests.xctest */,
-				A2841DCA2E8C2E72001C1B94 /* MyFamilyTreeUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,52 +83,6 @@
 			productReference = A2841DB32E8C2E71001C1B94 /* MyFamilyTree.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A2841DBF2E8C2E72001C1B94 /* MyFamilyTreeTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A2841DD72E8C2E72001C1B94 /* Build configuration list for PBXNativeTarget "MyFamilyTreeTests" */;
-			buildPhases = (
-				A2841DBC2E8C2E72001C1B94 /* Sources */,
-				A2841DBD2E8C2E72001C1B94 /* Frameworks */,
-				A2841DBE2E8C2E72001C1B94 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A2841DC22E8C2E72001C1B94 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				A2841DC32E8C2E72001C1B94 /* MyFamilyTreeTests */,
-			);
-			name = MyFamilyTreeTests;
-			packageProductDependencies = (
-			);
-			productName = MyFamilyTreeTests;
-			productReference = A2841DC02E8C2E72001C1B94 /* MyFamilyTreeTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		A2841DC92E8C2E72001C1B94 /* MyFamilyTreeUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A2841DDA2E8C2E72001C1B94 /* Build configuration list for PBXNativeTarget "MyFamilyTreeUITests" */;
-			buildPhases = (
-				A2841DC62E8C2E72001C1B94 /* Sources */,
-				A2841DC72E8C2E72001C1B94 /* Frameworks */,
-				A2841DC82E8C2E72001C1B94 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A2841DCC2E8C2E72001C1B94 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				A2841DCD2E8C2E72001C1B94 /* MyFamilyTreeUITests */,
-			);
-			name = MyFamilyTreeUITests;
-			packageProductDependencies = (
-			);
-			productName = MyFamilyTreeUITests;
-			productReference = A2841DCA2E8C2E72001C1B94 /* MyFamilyTreeUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -175,14 +95,6 @@
 				TargetAttributes = {
 					A2841DB22E8C2E71001C1B94 = {
 						CreatedOnToolsVersion = 26.0;
-					};
-					A2841DBF2E8C2E72001C1B94 = {
-						CreatedOnToolsVersion = 26.0;
-						TestTargetID = A2841DB22E8C2E71001C1B94;
-					};
-					A2841DC92E8C2E72001C1B94 = {
-						CreatedOnToolsVersion = 26.0;
-						TestTargetID = A2841DB22E8C2E71001C1B94;
 					};
 				};
 			};
@@ -201,28 +113,12 @@
 			projectRoot = "";
 			targets = (
 				A2841DB22E8C2E71001C1B94 /* MyFamilyTree */,
-				A2841DBF2E8C2E72001C1B94 /* MyFamilyTreeTests */,
-				A2841DC92E8C2E72001C1B94 /* MyFamilyTreeUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A2841DB12E8C2E71001C1B94 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A2841DBE2E8C2E72001C1B94 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A2841DC82E8C2E72001C1B94 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -239,34 +135,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A2841DBC2E8C2E72001C1B94 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A2841DC62E8C2E72001C1B94 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		A2841DC22E8C2E72001C1B94 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A2841DB22E8C2E71001C1B94 /* MyFamilyTree */;
-			targetProxy = A2841DC12E8C2E72001C1B94 /* PBXContainerItemProxy */;
-		};
-		A2841DCC2E8C2E72001C1B94 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A2841DB22E8C2E71001C1B94 /* MyFamilyTree */;
-			targetProxy = A2841DCB2E8C2E72001C1B94 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A2841DD22E8C2E72001C1B94 /* Debug */ = {
@@ -302,8 +171,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=*]" = "Apple Development: Mohamed ElAfifi (F79RZL3ZQ8)";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8H3H743CV9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -326,6 +198,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=*]" = "";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -365,8 +238,10 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development: Mohamed ElAfifi (F79RZL3ZQ8)";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8H3H743CV9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -393,10 +268,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 8H3H743CV9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyFamilyTree/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MyFamilyTree;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -407,8 +290,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTree;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mea.myfamilytree;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Mohamed El Afifi";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -424,10 +309,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 8H3H743CV9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyFamilyTree/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MyFamilyTree;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -438,8 +331,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTree;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mea.myfamilytree;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Mohamed El Afifi";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -447,86 +342,6 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		A2841DD82E8C2E72001C1B94 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTreeTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyFamilyTree.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MyFamilyTree";
-			};
-			name = Debug;
-		};
-		A2841DD92E8C2E72001C1B94 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTreeTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyFamilyTree.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MyFamilyTree";
-			};
-			name = Release;
-		};
-		A2841DDB2E8C2E72001C1B94 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTreeUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = MyFamilyTree;
-			};
-			name = Debug;
-		};
-		A2841DDC2E8C2E72001C1B94 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = MeA.MyFamilyTreeUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = MyFamilyTree;
 			};
 			name = Release;
 		};
@@ -547,24 +362,6 @@
 			buildConfigurations = (
 				A2841DD52E8C2E72001C1B94 /* Debug */,
 				A2841DD62E8C2E72001C1B94 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A2841DD72E8C2E72001C1B94 /* Build configuration list for PBXNativeTarget "MyFamilyTreeTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A2841DD82E8C2E72001C1B94 /* Debug */,
-				A2841DD92E8C2E72001C1B94 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A2841DDA2E8C2E72001C1B94 /* Build configuration list for PBXNativeTarget "MyFamilyTreeUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A2841DDB2E8C2E72001C1B94 /* Debug */,
-				A2841DDC2E8C2E72001C1B94 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

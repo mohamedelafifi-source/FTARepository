@@ -25,7 +25,7 @@ import UIKit
 /// Centralized here alongside image/photo handling to keep related logic together.
 /// Note: This type used to be duplicated in PhotoIndexEntry.swift, which caused
 /// an "Invalid redeclaration" error. That file has been removed.
-struct PhotoIndexEntry: Identifiable, Codable {
+struct PhotoIndexEntry: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var name: String
     var fileName: String
@@ -122,21 +122,25 @@ struct PhotoBrowserView: View {
     @State private var showDeleteConfirm = false
     @State private var errorMessage: String?
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         NavigationSplitView {
-            List {
+            List(selection: $selected) {
                 ForEach(entries) { entry in
-                    Button {
-                        selected = entry
-                    } label: {
-                        Text(entry.name).lineLimit(1)
-                    }
+                    Text(entry.name)
+                        .lineLimit(1)
+                        .tag(entry)
                 }
                 .onDelete(perform: deleteEntries)
             }
             .navigationTitle("Photos")
             .onAppear(perform: loadIndex)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         } detail: {
             Group {
                 if let entry = selected {
@@ -240,6 +244,7 @@ struct PhotoBrowserView: View {
         do {
             let arr = try StorageManager.shared.loadPhotoIndex(from: indexURL)
             entries = arr.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            if hSizeClass == .regular, selected == nil { selected = entries.first }
         } catch {
             print("Failed to load photo index:", error.localizedDescription)
         }
@@ -260,6 +265,7 @@ struct FilteredPhotoBrowserView: View {
     @State private var showDeleteConfirm = false
     @State private var errorMessage: String?
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     private var filterSet: Set<String> {
         Set(filterNames.map { $0.lowercased() })
@@ -267,18 +273,21 @@ struct FilteredPhotoBrowserView: View {
 
     var body: some View {
         NavigationSplitView {
-            List {
+            List(selection: $selected) {
                 ForEach(entries) { entry in
-                    Button {
-                        selected = entry
-                    } label: {
-                        Text(entry.name).lineLimit(1)
-                    }
+                    Text(entry.name)
+                        .lineLimit(1)
+                        .tag(entry)
                 }
                 .onDelete(perform: deleteEntries)
             }
             .navigationTitle("Tree Photos")
             .onAppear(perform: loadIndex)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         } detail: {
             Group {
                 if let entry = selected {
@@ -384,7 +393,11 @@ struct FilteredPhotoBrowserView: View {
             // Filter by names (case-insensitive)
             let filtered = all.filter { filterSet.contains($0.name.lowercased()) }
             entries = filtered.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            selected = entries.first
+            if hSizeClass == .regular {
+                selected = entries.first
+            } else {
+                selected = nil
+            }
         } catch {
             print("Failed to load photo index:", error.localizedDescription)
         }
