@@ -29,12 +29,6 @@ struct ContentView: View {
     
     @State private var pendingFileHandlingCommand: FileHandlingCommand? = nil
     
-    // New state flags to drive JSON importers directly
-    // Removed:
-    // @State private var showJSONPickerForLoad = false
-    // @State private var showJSONPickerForAppend = false
-    // Removed UIKit pickers states as per instructions
-    
     // Stable binding to present the exporter
     private var showExporterBinding: Binding<Bool> {
         Binding(
@@ -67,11 +61,7 @@ struct ContentView: View {
     @State private var originalMembers: [String: FamilyMember] = [:]
     
     @State private var showConfirmation = false
-    // Removed showClearAlert as per instructions
-    // @State private var showClearAlert = false
     @State private var entryMode: EntryMode = .bulk
-    
-    // Removed @FocusState private var bulkEditorFocused: Bool
     
     // Exporter state
     @State private var exportingNow = false
@@ -88,20 +78,6 @@ struct ContentView: View {
     // New state variables for filtered photo view
     @State private var showFilteredPhotos = false
     @State private var filteredNamesForPhotos: [String] = []
-    
-    // Removed environment and popover states as per instructions
-    // @Environment(\.horizontalSizeClass) private var hSizeClass
-    // @State private var showPhotosPopover = false
-    // @State private var showDataEntryPopover = false
-    // @State private var showViewPopover = false
-    // @State private var showFilePopover = false
-    
-    // Removed popover state flags as per instructions
-    //@State private var showPhotosMenu = false
-    //@State private var showDataEntryMenu = false
-    //@State private var showViewMenu = false
-    //@State private var showFileMenu = false
-    
     
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
@@ -233,8 +209,7 @@ struct ContentView: View {
         // React to payload changes → prepare doc and present
         // Runs a closure wnenever there is a newValue
         .onReceive(globals.$exportPayload) { newValue in
-            //No need now to print to the console
-            // print("📦 exportPayload →", String(describing: newValue))
+            
             switch newValue {
             case .none:
                 break
@@ -340,7 +315,7 @@ struct ContentView: View {
                 .font(.footnote)
             }
             
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button {
                         if FamilyDataManager.shared.membersDictionary.isEmpty {
@@ -355,7 +330,7 @@ struct ContentView: View {
                 .font(.footnote)
             }
             
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button("Save to Text File") {
                         let text = dataManager.generateExportText()
