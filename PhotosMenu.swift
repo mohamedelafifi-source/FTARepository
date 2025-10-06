@@ -168,7 +168,9 @@ struct PhotosMenu: View {
                     showAlert = true
                     return
                 }
-                showFilteredPhotos = true
+                DispatchQueue.main.async {
+                    showFilteredPhotos = true
+                }
             }
             .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
         } label: {
@@ -177,3 +179,4 @@ struct PhotosMenu: View {
         .font(.footnote)
     }
 }
+
