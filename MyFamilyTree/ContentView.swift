@@ -71,7 +71,7 @@ struct ContentView: View {
     // @State private var showClearAlert = false
     @State private var entryMode: EntryMode = .bulk
     
-    @FocusState private var bulkEditorFocused: Bool
+    // Removed @FocusState private var bulkEditorFocused: Bool
     
     // Exporter state
     @State private var exportingNow = false
@@ -310,150 +310,19 @@ struct ContentView: View {
         //=========MAIN MENU ENTRY===========
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    if let url = globals.selectedFolderURL {
-                        Text("Folder: \(url.lastPathComponent)").font(.caption2)
-                    } else {
-                        Text("Folder: none").foregroundColor(.secondary).font(.caption2)
-                    }
-                    Divider()
-                    Button("Select Storage Folder…") { showFolderPicker = true }
-                    Button("Create Photo Index in Folder") {
-                        guard let folder = globals.selectedFolderURL else {
-                            alertMessage = "Please select a storage folder first."
-                            showAlert = true
-                            return
-                        }
-                        do {
-                            let indexURL = folder.appendingPathComponent("photo-index.json")
-                            if FileManager.default.fileExists(atPath: indexURL.path) {
-                                throw CocoaError(.fileWriteFileExists)
-                            }
-                            let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                            globals.selectedJSONURL = url
-                            successMessage = "Photo index created at “\(url.lastPathComponent)”."
-                            showSuccess = true
-                        } catch {
-                            let nsErr = error as NSError
-                            if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSFileWriteFileExistsError {
-                                alertMessage = "A photo index already exists in the selected folder."
-                            } else {
-                                alertMessage = error.localizedDescription
-                            }
-                            showAlert = true
-                        }
-                    }
-                    .disabled(globals.selectedFolderURL == nil)
-                    Divider()
-                    Button("Import a Photo …") {
-                        guard globals.selectedFolderURL != nil else {
-                            alertMessage = "Select a storage folder first."
-                            showAlert = true
-                            return
-                        }
-                        tempNameInput = ""
-                        showNamePrompt = true
-                    }
-                    .disabled(globals.selectedFolderURL == nil)
-                    Button("Browse All Photos") {
-                        if let folder = globals.selectedFolderURL {
-                            if globals.selectedJSONURL == nil {
-                                do {
-                                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                                    globals.selectedJSONURL = url
-                                } catch {
-                                    alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                                    showAlert = true
-                                    return
-                                }
-                            }
-                            guard globals.selectedJSONURL != nil else {
-                                alertMessage = "Select a storage folder and photo index first."
-                                showAlert = true
-                                return
-                            }
-                            showGallery = true
-                        } else {
-                            alertMessage = "Select a storage folder first."
-                            showAlert = true
-                        }
-                    }
-                    .disabled(globals.selectedFolderURL == nil)
-                    Button("Browse Tree Photos") {
-                        if FamilyDataManager.shared.membersDictionary.isEmpty {
-                            alertMessage = "No family data loaded. Please add or parse data first."
-                            showAlert = true
-                            return
-                        }
-                        guard let folder = globals.selectedFolderURL else {
-                            alertMessage = "Select a storage folder first (Photos menu)."
-                            showAlert = true
-                            return
-                        }
-                        if globals.selectedJSONURL == nil {
-                            do {
-                                let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                                globals.selectedJSONURL = url
-                            } catch {
-                                alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                                showAlert = true
-                                return
-                            }
-                        }
-                        guard let idxURL = globals.selectedJSONURL else {
-                            alertMessage = "Select a storage folder and photo index first (Photos menu)."
-                            showAlert = true
-                            return
-                        }
-                        let manager = FamilyDataManager.shared
-                        let groups: [LevelGroup]
-                        if let focus = manager.focusedMemberId {
-                            groups = manager.getConnectedFamilyOf(memberId: focus)
-                        } else {
-                            groups = manager.getAllLevels()
-                        }
-                        let names = groups.flatMap { $0.members.map { $0.name } }
-                        filteredNamesForPhotos = Array(Set(names)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-                        if filteredNamesForPhotos.isEmpty {
-                            alertMessage = "No visible names in the current tree."
-                            showAlert = true
-                            return
-                        }
-                        do {
-                            let indexNames = try readIndexNames(from: idxURL)
-                            if indexNames.isEmpty {
-                                alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
-                                showAlert = true
-                                return
-                            }
-                            let visible = Set(filteredNamesForPhotos)
-                            let intersection = visible.intersection(indexNames)
-                            if intersection.isEmpty {
-                                alertMessage = "None of the visible names are present in the photo index.\nNames: \(filteredNamesForPhotos.joined(separator: ", "))"
-                                showAlert = true
-                                return
-                            }
-                            let allEntries = try StorageManager.shared.loadPhotoIndex(from: idxURL)
-                            let visibleSet = Set(filteredNamesForPhotos.map { $0.lowercased() })
-                            let candidates = allEntries.filter { visibleSet.contains($0.name.lowercased()) }
-                            let anyExisting = candidates.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) }
-                            if !anyExisting {
-                                alertMessage = "No photos on disk match the visible names in this tree."
-                                showAlert = true
-                                return
-                            }
-                        } catch {
-                            alertMessage = "Failed to read photo index: \(error.localizedDescription)"
-                            showAlert = true
-                            return
-                        }
-                        showFilteredPhotos = true
-                    }
-                    .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
-                } label: {
-                    Text("Photos")
-                }
-                .font(.footnote)
+                PhotosMenu(
+                    showFolderPicker: $showFolderPicker,
+                    showGallery: $showGallery,
+                    showFilteredPhotos: $showFilteredPhotos,
+                    showPhotoImporter: $showPhotoImporter,
+                    showNamePrompt: $showNamePrompt,
+                    tempNameInput: $tempNameInput,
+                    filteredNamesForPhotos: $filteredNamesForPhotos,
+                    alertMessage: $alertMessage,
+                    showAlert: $showAlert,
+                    showSuccess: $showSuccess,
+                    successMessage: $successMessage
+                )
             }
 
             ToolbarItem(placement: .topBarLeading) {
@@ -619,88 +488,21 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showBulkEditor) {
-            NavigationStack {
-                VStack(spacing: 12) {
-                    Text("Paste Bulk Data")
-                        .font(.headline)
-
-                    // SHOW THE TEXT EDITOR
-                    TextEditor(text: $bulkText)
-                        .focused($bulkEditorFocused)
-                        .padding(8)
-                        .background(.quaternary.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                        .frame(minHeight: 220)
-                }
-                .padding()
-                .onAppear { bulkEditorFocused = false }
-                .navigationTitle("Bulk Editor")
-                .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button("Parse") {
-                            showConfirmation = true
-                        }
-                        Button("Done") {
-                            bulkText = ""
-                            showBulkEditor = false
-                        }
-                    }
-                }
-                .alert("Parse Bulk Data?", isPresented: $showConfirmation) {
-                    // why do i need this button ??????
-                    // Button("Cancel", role: .cancel) { }
-                    Button("Parse", role: .destructive) {
-                        FamilyDataInputView.parseBulkInput(bulkText)
-                        successMessage = "Bulk data parsed."
-                        showSuccess = true
-                        bulkText = ""
-                        // Keep the editor open; do not dismiss here.
-                    }
-                } message: {
-                    Text("This will process the pasted text.")
-                }
-                // Removed alert for clearing data here as per instructions
-            }
+            BulkEditorSheet(
+                isPresented: $showBulkEditor,
+                bulkText: $bulkText,
+                showConfirmation: $showConfirmation,
+                showSuccess: $showSuccess,
+                successMessage: $successMessage
+            )
         }
         .sheet(isPresented: $showNamePrompt) {
-            NavigationStack {
-                VStack(spacing: 16) {
-                    Text("Select the photo owner")
-                        .font(.headline)
-                    TextField("Person's name", text: $tempNameInput)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal)
-                    HStack {
-                        Button("Cancel", role: .cancel) {
-                            showNamePrompt = false
-                        }
-                        Spacer()
-                        Button("Import") {
-                            pendingPhotoName = tempNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                            showNamePrompt = false
-                            // proceed to Photos picker
-                            showPhotoImporter = true
-                        }
-                        .disabled(tempNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    .padding(.horizontal)
-                }
-                .padding()
-                .navigationTitle("Name for Photo")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Import") {
-                            pendingPhotoName = tempNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                            showNamePrompt = false
-                            showPhotoImporter = true
-                        }
-                        .disabled(tempNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
+            NamePromptSheet(
+                isPresented: $showNamePrompt,
+                tempNameInput: $tempNameInput
+            ) { name in
+                pendingPhotoName = name
+                showPhotoImporter = true
             }
         }
         
