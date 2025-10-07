@@ -473,14 +473,23 @@ struct ContentView: View {
                 successMessage: $successMessage
             )
         }
+        ///This will call the Name Prompt Sheet . I modified it not to allow duplicate names
         .sheet(isPresented: $showNamePrompt) {
             NamePromptSheet(
                 isPresented: $showNamePrompt,
-                tempNameInput: $tempNameInput
-            ) { name in
-                pendingPhotoName = name
-                showPhotoImporter = true
-            }
+                tempNameInput: $tempNameInput,
+                onConfirm: { name in
+                    pendingPhotoName = name
+                    showPhotoImporter = true
+                },
+                existingNames: {
+                    if let idx = globals.selectedJSONURL, let names = try? readIndexNames(from: idx) {
+                        return names
+                    } else {
+                        return []
+                    }
+                }()
+            )
         }
         
     }
