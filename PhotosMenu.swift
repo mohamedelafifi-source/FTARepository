@@ -143,14 +143,20 @@ struct PhotosMenu: View {
                 do {
                     let indexNames = try readIndexNames(from: idxURL)
                     if indexNames.isEmpty {
+                        /* Do not show all the names
                         alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
+                        */
+                        alertMessage = "No photos are found in the photo index"
                         showAlert = true
                         return
                     }
                     let visible = Set(filteredNamesForPhotos)
                     let intersection = visible.intersection(indexNames)
                     if intersection.isEmpty {
+                        /* DO not show all the names
                         alertMessage = "None of the visible names are present in the photo index.\nNames: \(filteredNamesForPhotos.joined(separator: ", "))"
+                        */
+                        alertMessage = "None of the names are present in the photo index"
                         showAlert = true
                         return
                     }
@@ -159,7 +165,7 @@ struct PhotosMenu: View {
                     let candidates = allEntries.filter { visibleSet.contains($0.name.lowercased()) }
                     let anyExisting = candidates.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) }
                     if !anyExisting {
-                        alertMessage = "No photos on disk match the visible names in this tree."
+                        alertMessage = "No photos on disk match the names in this tree."
                         showAlert = true
                         return
                     }
@@ -168,6 +174,7 @@ struct PhotosMenu: View {
                     showAlert = true
                     return
                 }
+                // To solve the issue of the first tree photo not shown except when the second photo is added
                 DispatchQueue.main.async {
                     showFilteredPhotos = true
                 }

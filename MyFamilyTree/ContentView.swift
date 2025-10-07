@@ -269,7 +269,9 @@ struct ContentView: View {
                         personName: pendingPhotoName
                     )
                     globals.selectedJSONURL = result.indexURL  // in case it was created
-                    successMessage = "Imported “\(result.displayName)” → \(result.savedURL.lastPathComponent)"
+                    //Do not show the whole path to the user
+                    //successMessage = "Imported “\(result.displayName)” → \(result.savedURL.lastPathComponent)"
+                    successMessage = "Imported"
                     showSuccess = true
                 } catch {
                     let nsErr = error as NSError
@@ -319,7 +321,7 @@ struct ContentView: View {
                 Menu {
                     Button {
                         if FamilyDataManager.shared.membersDictionary.isEmpty {
-                            alertMessage = "No family data loaded. Please add or parse data first."
+                            alertMessage = "No family data. Please add or parse data first"
                             showAlert = true
                         } else {
                             showFamilyTree = true
@@ -350,7 +352,7 @@ struct ContentView: View {
                         }
                     }
                     .disabled(dataManager.membersDictionary.isEmpty)
-                    Button("Append from JSON file") {
+                    Button("Append from a Tree File") {
                         pendingFileHandlingCommand = .importAppend
                         showFileHandling = true
                     }
