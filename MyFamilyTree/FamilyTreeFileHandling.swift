@@ -153,7 +153,8 @@ struct FileHandlingView: View {
     private func handleExportResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):
-            alertMessage = "Successfully saved to \(url.lastPathComponent)"
+            //alertMessage = "Successfully saved to \(url.lastPathComponent)"
+            alertMessage = "Successfully saved "
             showingAlert = true
         case .failure(let error):
             alertMessage = "Error saving file: \(error.localizedDescription)"
@@ -191,13 +192,15 @@ struct FileHandlingView: View {
                             manager.membersDictionary[member.name] = member
                         }
                     }
-                    alertMessage = "Successfully appended data from \(url.lastPathComponent)"
+                    //alertMessage = "Successfully appended data from \(url.lastPathComponent)"
+                    alertMessage = "Successfully appended data "
                 } else {
                     manager.membersDictionary.removeAll()
                     for member in importedMembers {
                         manager.membersDictionary[member.name] = member
                     }
-                    alertMessage = "Successfully loaded data from \(url.lastPathComponent)"
+                    //alertMessage = "Successfully loaded data from \(url.lastPathComponent)"
+                    alertMessage = "Successfully loaded data "
                 }
                 
                 manager.linkFamilyRelations()
