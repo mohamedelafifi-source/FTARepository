@@ -4,7 +4,6 @@ struct PhotosMenu: View {
     @ObservedObject var globals = GlobalVariables.shared
     @ObservedObject var dataManager = FamilyDataManager.shared
 
-    @Binding var showFolderPicker: Bool
     @Binding var showGallery: Bool
     @Binding var showFilteredPhotos: Bool
     @Binding var showPhotoImporter: Bool
@@ -31,13 +30,6 @@ struct PhotosMenu: View {
 
     var body: some View {
         Menu {
-            if let url = globals.selectedFolderURL {
-                Text("Folder: \(url.lastPathComponent)").font(.caption2)
-            } else {
-                Text("Folder: none").foregroundColor(.secondary).font(.caption2)
-            }
-            Divider()
-            Button("Select Storage Folder…") { showFolderPicker = true }
             Button("Create Photo Index in Folder") {
                 guard let folder = globals.selectedFolderURL else {
                     alertMessage = "Please select a storage folder first."
@@ -186,4 +178,3 @@ struct PhotosMenu: View {
         .font(.footnote)
     }
 }
-

@@ -84,29 +84,43 @@ struct ContentView: View {
         case individual = "Individual"
     }
     
+    // Display helper for the Location menu path line
+    fileprivate var folderPathDisplay: String {
+        if let url = globals.selectedFolderURL {
+            return url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        } else {
+            return "None selected"
+        }
+    }
+    
+    // Simple flag for Location menu state (kept out of the view builder)
+    fileprivate var isFolderSelected: Bool {
+        globals.selectedFolderURL != nil
+    }
+    
     // Helper to queue an export (handled by onReceive)
-    private func queueExport(_ payload: ExportPayload) {
+    fileprivate func queueExport(_ payload: ExportPayload) {
         globals.exportPayload = payload
     }
     
     // Auto-unique filenames
-    private func stamped(_ base: String, ext: String) -> String {
+    fileprivate func stamped(_ base: String, ext: String) -> String {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyyMMdd-HHmmss"
         return "\(base)-\(fmt.string(from: Date())).\(ext)"
     }
     
     // New helpers for JSON loading and validation
-    private func loadMembers(from url: URL) throws -> [FamilyMember] {
+    fileprivate func loadMembers(from url: URL) throws -> [FamilyMember] {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode([FamilyMember].self, from: data)
     }
 
-    private func isLikelyJSON(_ url: URL) -> Bool {
+    fileprivate func isLikelyJSON(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == "json"
     }
     
-    private func readIndexNames(from indexURL: URL) throws -> Set<String> {
+    fileprivate func readIndexNames(from indexURL: URL) throws -> Set<String> {
         let data = try Data(contentsOf: indexURL)
         // Attempt to decode as an array of entries with a 'name' field
         if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -120,6 +134,279 @@ struct ContentView: View {
         return []
     }
     
+    private func prepareExport(for payload: ExportPayload) {
+        switch payload {
+        case .none:
+            break
+        case .text(let s, let name):
+            exportDoc = TempExportDocument(data: Data(s.utf8))
+            exportType = .plainText
+            exportName = name.isEmpty ? stamped("READ_ME", ext: "txt") : name
+        case .json(let jsonString, let name):
+            exportDoc = TempExportDocument(data: Data(jsonString.utf8))
+            exportType = .json
+            let final = name.isEmpty ? stamped("database", ext: "json") : (name.hasSuffix(".json") ? name : "\(name).json")
+            exportName = final
+        case .image(let bytes, let name, let type):
+            exportDoc = TempExportDocument(data: bytes)
+            exportType = type
+            exportName = name
+        }
+    }
+
+    private func handlePickedItem(_ item: PhotosPickerItem) async {
+        defer { pickedItem = nil }
+        guard let folder = globals.selectedFolderURL else {
+            alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+            showAlert = true
+            return
+        }
+        do {
+            let result = try await PhotoImportService.importFromPhotos(
+                item: item,
+                folderURL: folder,
+                currentIndexURL: globals.selectedJSONURL,
+                personName: pendingPhotoName
+            )
+            globals.selectedJSONURL = result.indexURL
+            successMessage = "Imported"
+            showSuccess = true
+        } catch {
+            let nsErr = error as NSError
+            if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
+                // user cancelled picker
+            } else {
+                alertMessage = error.localizedDescription
+                showAlert = true
+            }
+        }
+    }
+    
+    @ToolbarContentBuilder
+    private var mainToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            LocationMenu(showFolderPicker: $showFolderPicker, folderPathDisplay: folderPathDisplay, isFolderSelected: isFolderSelected)
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            fileHandlingMenu
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            dataEntryMenu
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            viewMenu
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            photosToolbarMenu
+        }
+    }
+
+    private var fileHandlingMenu: some View {
+        Menu {
+            Button("Save to Text File") {
+                let text = dataManager.generateExportText()
+                queueExport(.text(text, name: "FamilyData"))
+            }
+            .disabled(dataManager.membersDictionary.isEmpty)
+            Button("Save to a Tree File") {
+                do {
+                    let members = Array(dataManager.membersDictionary.values)
+                    let data = try JSONEncoder().encode(members)
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        queueExport(.json(jsonString, name: "FTname.json"))
+                    }
+                } catch {
+                    alertMessage = "Failed to encode JSON: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+            .disabled(dataManager.membersDictionary.isEmpty)
+            Button("Append from a Tree File") {
+                pendingFileHandlingCommand = .importAppend
+                if globals.selectedFolderURL == nil {
+                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+                    showAlert = true
+                    return
+                }
+                DispatchQueue.main.async { showFileHandling = true }
+            }
+            Button("Load from a Tree File") {
+                pendingFileHandlingCommand = .importLoad
+                if globals.selectedFolderURL == nil {
+                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+                    showAlert = true
+                    return
+                }
+                DispatchQueue.main.async { showFileHandling = true }
+            }
+        } label: { Text("File Handling") }
+        .font(.footnote)
+    }
+
+    private var dataEntryMenu: some View {
+        Menu {
+            Button("Paste/Parse Bulk Data") { showBulkEditor = true }
+            Divider()
+            Button("Individual Entry") {
+                originalMembers = FamilyDataManager.shared.membersDictionary
+                showIndividualEntry = true
+            }
+            Divider()
+            Button("Clear All Data", role: .destructive) { showDataEntryClearAlert = true }
+                .disabled(FamilyDataManager.shared.membersDictionary.isEmpty)
+        } label: { Text("Data Entry") }
+        .font(.footnote)
+    }
+
+    private var viewMenu: some View {
+        Menu {
+            Button {
+                if FamilyDataManager.shared.membersDictionary.isEmpty {
+                    alertMessage = "No family data. Please add or parse data first"
+                    showAlert = true
+                } else {
+                    showFamilyTree = true
+                }
+            } label: { Label("Show Family Tree", systemImage: "person.3") }
+            .disabled(dataManager.membersDictionary.isEmpty)
+        } label: { Text("View") }
+        .font(.footnote)
+    }
+
+    private var photosToolbarMenu: some View {
+        PhotosMenu(
+            showGallery: $showGallery,
+            showFilteredPhotos: $showFilteredPhotos,
+            showPhotoImporter: $showPhotoImporter,
+            showNamePrompt: $showNamePrompt,
+            tempNameInput: $tempNameInput,
+            filteredNamesForPhotos: $filteredNamesForPhotos,
+            alertMessage: $alertMessage,
+            showAlert: $showAlert,
+            showSuccess: $showSuccess,
+            successMessage: $successMessage
+        )
+    }
+    
+    private func attachSheets<V: View>(to view: V) -> some View {
+        view
+            .sheet(isPresented: $showFolderPicker) {
+                NavigationStack {
+                    FolderPickerView { url in
+                        if url.startAccessingSecurityScopedResource() {
+                            globals.selectedFolderURL = url
+                            showFolderPicker = false
+                        } else {
+                            alertMessage = "Couldn’t access the selected folder. Please try a different location."
+                            showAlert = true
+                            showFolderPicker = false
+                        }
+                    }
+                    .navigationTitle("Select Folder")
+                }
+            }
+            .sheet(isPresented: $showJSONPicker) {
+                NavigationStack {
+                    JSONPickerView { url in
+                        globals.selectedJSONURL = url
+                        do {
+                            let data = try Data(contentsOf: url)
+                            let preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
+                            globals.openedJSONPreview = String(preview.prefix(2000))
+                        } catch {
+                            globals.openedJSONPreview = "Failed to read JSON: \(error.localizedDescription)"
+                        }
+                        showJSONPicker = false
+                    }
+                    .navigationTitle("Open JSON")
+                }
+            }
+            .sheet(isPresented: $showGallery) {
+                if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
+                    if #available(iOS 16.0, *) {
+                        PhotoBrowserView(folderURL: folder, indexURL: idx)
+                    } else {
+                        Text("Requires iOS 16.0 or later.")
+                            .padding()
+                    }
+                } else {
+                    ImagesListView()
+                }
+            }
+            .sheet(isPresented: $showFilteredPhotos) {
+                if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
+                    if #available(iOS 16.0, *) {
+                        FilteredPhotoBrowserView(folderURL: folder, indexURL: idx, filterNames: filteredNamesForPhotos)
+                    } else {
+                        Text("Requires iOS 16.0 or later.")
+                            .padding()
+                    }
+                } else {
+                    Text("Select a storage folder and photo index first.")
+                        .padding()
+                }
+            }
+            .sheet(isPresented: $showFamilyTree) {
+                NavigationStack {
+                    FamilyTreeView()
+                        .navigationTitle("Family Tree")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showFamilyTree = false }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showFileHandling) {
+                NavigationStack {
+                    FileHandlingView(command: pendingFileHandlingCommand)
+                        .navigationTitle("File Handling")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showFileHandling = false }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showIndividualEntry) {
+                NavigationStack {
+                    FamilyDataInputView()
+                        .navigationTitle("Individual Entry")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showIndividualEntry = false }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showBulkEditor) {
+                BulkEditorSheet(
+                    isPresented: $showBulkEditor,
+                    bulkText: $bulkText,
+                    showConfirmation: $showConfirmation,
+                    showSuccess: $showSuccess,
+                    successMessage: $successMessage
+                )
+            }
+            .sheet(isPresented: $showNamePrompt) {
+                NamePromptSheet(
+                    isPresented: $showNamePrompt,
+                    tempNameInput: $tempNameInput,
+                    onConfirm: { name in
+                        pendingPhotoName = name
+                        showPhotoImporter = true
+                    },
+                    existingNames: {
+                        if let idx = globals.selectedJSONURL, let names = try? readIndexNames(from: idx) {
+                            return names
+                        } else {
+                            return []
+                        }
+                    }()
+                )
+            }
+    }
+    
     /*
      What is @ViewBuilder: A special attribute used by SwiftUI to allow multiple child views to be returned from a function or closure, while still appearing like a single expression.
      • Why it’s used: It lets you write “if/else” and multiple views inline without manually wrapping them in containers or arrays.
@@ -130,19 +417,12 @@ struct ContentView: View {
      */
     @ViewBuilder
     private var contentHost: some View {
-        
-        VStack(spacing: 16) {
+        let base = VStack(spacing: 16) {
             Text("Welcome to Family Tree")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
-        /*=====No Need to show the title
-        .navigationTitle("Family Tree")
-        .navigationBarTitleDisplayMode(.inline)
-        */
         .photosPicker(isPresented: $showPhotoImporter, selection: $pickedItem, matching: .images)
-        
-        // Attach the exporter directly to this view
         .fileExporter(
             isPresented: showExporterBinding,
             document: exportDoc,
@@ -158,19 +438,15 @@ struct ContentView: View {
             case .failure(let error):
                 let nsErr = error as NSError
                 if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
-                    // User cancelled — no alert
                     break
                 }
                 alertMessage = error.localizedDescription
                 showAlert = true
             }
-            // Reset for future presentations
             globals.exportPayload = .none
             globals.showExporter = false
             exportingNow = false
         }
-        
-        // Error + success alerts
         .alert("Error", isPresented: $showAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -184,7 +460,6 @@ struct ContentView: View {
         } message: {
             Text(successMessage)
         }
-        // New alert for clearing data via Data Entry menu
         .alert("Clear all in-memory family data?", isPresented: $showDataEntryClearAlert) {
             Button("Clear", role: .destructive) {
                 dataManager.membersDictionary.removeAll()
@@ -194,53 +469,21 @@ struct ContentView: View {
         } message: {
             Text("This removes all parsed data from memory. It does not affect files on disk.")
         }
-        
-        // Keep debounce healthy after close
-        //Set the exportingNow to false to allow export in the .onReceive
-        //Detects the change of the showExporter
         .onChange(of: globals.showExporter) { oldValue, newValue in
-            //print("🔔 showExporter:", oldValue, "→", newValue)
             if newValue == false {
                 globals.exportPayload = .none
                 exportingNow = false
             }
         }
-        //I setglobals.exportPayload to set the appropriate function as in the following code
-        // React to payload changes → prepare doc and present
-        // Runs a closure wnenever there is a newValue
         .onReceive(globals.$exportPayload) { newValue in
-            
             switch newValue {
             case .none:
                 break
-            //Text file
-            case .text(let s, let name):
-                exportDoc = TempExportDocument(data: Data(s.utf8))
-                exportType = .plainText
-                exportName = name.isEmpty ? stamped("READ_ME", ext: "txt") : name
-            //JSON file
-            case .json(let jsonString, let name):
-                exportDoc = TempExportDocument(data: Data(jsonString.utf8))
-                exportType = .json
-                let final = name.isEmpty ? stamped("database", ext: "json") : (name.hasSuffix(".json") ? name : "\(name).json")
-                exportName = final
-            //Image file
-            case .image(let bytes, let name, let type):
-                exportDoc = TempExportDocument(data: bytes)
-                exportType = type
-                exportName = name
-            }
-            if case .none = newValue {
-                // nothing to do
-            } else {
+            default:
+                prepareExport(for: newValue)
                 guard !exportingNow else { return }
                 exportingNow = true
-                //Set exportingNow to cancel triggering the export twice before the first one ends
-                DispatchQueue.main.async {
-                    globals.showExporter = true
-                }
-                // Failsafe unlock if sheet doesn’t appear (simulator quirk)
-                // Wait 2.5 seconds then allow exporting again
+                DispatchQueue.main.async { globals.showExporter = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     if GlobalVariables.shared.showExporter == false && exportingNow {
                         exportingNow = false
@@ -248,250 +491,13 @@ struct ContentView: View {
                 }
             }
         }
-        
-        // Photos import handler (now thin and simple)
         .onChange(of: pickedItem) { _, newItem in
             guard let item = newItem else { return }
-            Task {
-                defer { pickedItem = nil }
-                
-                guard let folder = globals.selectedFolderURL else {
-                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
-                    showAlert = true
-                    return
-                }
-                
-                do {
-                    let result = try await PhotoImportService.importFromPhotos(
-                        item: item,
-                        folderURL: folder,
-                        currentIndexURL: globals.selectedJSONURL,
-                        personName: pendingPhotoName
-                    )
-                    globals.selectedJSONURL = result.indexURL  // in case it was created
-                    //Do not show the whole path to the user
-                    //successMessage = "Imported “\(result.displayName)” → \(result.savedURL.lastPathComponent)"
-                    successMessage = "Imported"
-                    showSuccess = true
-                } catch {
-                    let nsErr = error as NSError
-                    if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
-                        // user cancelled picker
-                    } else {
-                        alertMessage = error.localizedDescription
-                        showAlert = true
-                    }
-                }
-            }
+            Task { await handlePickedItem(item) }
         }
-        //=========MAIN MENU ENTRY===========
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                PhotosMenu(
-                    showFolderPicker: $showFolderPicker,
-                    showGallery: $showGallery,
-                    showFilteredPhotos: $showFilteredPhotos,
-                    showPhotoImporter: $showPhotoImporter,
-                    showNamePrompt: $showNamePrompt,
-                    tempNameInput: $tempNameInput,
-                    filteredNamesForPhotos: $filteredNamesForPhotos,
-                    alertMessage: $alertMessage,
-                    showAlert: $showAlert,
-                    showSuccess: $showSuccess,
-                    successMessage: $successMessage
-                )
-            }
+        .toolbar { mainToolbar }
 
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button("Paste/Parse Bulk Data") { showBulkEditor = true }
-                    Divider()
-                    Button("Individual Entry") {
-                        originalMembers = FamilyDataManager.shared.membersDictionary
-                        showIndividualEntry = true
-                    }
-                    Divider()
-                    Button("Clear All Data", role: .destructive) { showDataEntryClearAlert = true }
-                        .disabled(FamilyDataManager.shared.membersDictionary.isEmpty)
-                } label: { Text("Data Entry") }
-                .font(.footnote)
-            }
-            
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button {
-                        if FamilyDataManager.shared.membersDictionary.isEmpty {
-                            alertMessage = "No family data. Please add or parse data first"
-                            showAlert = true
-                        } else {
-                            showFamilyTree = true
-                        }
-                    } label: { Label("Show Family Tree", systemImage: "person.3") }
-                    .disabled(dataManager.membersDictionary.isEmpty)
-                } label: { Text("View") }
-                .font(.footnote)
-            }
-            
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button("Save to Text File") {
-                        let text = dataManager.generateExportText()
-                        queueExport(.text(text, name: "FamilyData"))
-                    }
-                    .disabled(dataManager.membersDictionary.isEmpty)
-                    Button("Save to a Tree File") {
-                        do {
-                            let members = Array(dataManager.membersDictionary.values)
-                            let data = try JSONEncoder().encode(members)
-                            if let jsonString = String(data: data, encoding: .utf8) {
-                                queueExport(.json(jsonString, name: "FTname.json"))
-                            }
-                        } catch {
-                            alertMessage = "Failed to encode JSON: \(error.localizedDescription)"
-                            showAlert = true
-                        }
-                    }
-                    .disabled(dataManager.membersDictionary.isEmpty)
-                    Button("Append from a Tree File") {
-                        pendingFileHandlingCommand = .importAppend
-                        showFileHandling = true
-                    }
-                    Button("Load from a Tree File") {
-                        pendingFileHandlingCommand = .importLoad
-                        showFileHandling = true
-                    }
-                } label: { Text("File Handling") }
-                .font(.footnote)
-            }
-        }
-        
-        
-        //=========
-        // SHEETS
-        //=========
-        /* A,.sheet is the SwiftUI way to present modals: you bind it to some piece of state, and when that state indicates presentation, SwiftUI shows the sheet and manages its lifecycle.
-            If true it will show the sheet , when it is false it will dismiss the sheet
-        */
-        .sheet(isPresented: $showFolderPicker) {
-            NavigationStack {
-                FolderPickerView { url in
-                    if url.startAccessingSecurityScopedResource() {
-                        globals.selectedFolderURL = url
-                        showFolderPicker = false
-                    } else {
-                        alertMessage = "Couldn’t access the selected folder. Please try a different location."
-                        showAlert = true
-                        showFolderPicker = false
-                    }
-                }
-                .navigationTitle("Select Folder")
-            }
-        }
-        .sheet(isPresented: $showJSONPicker) {
-            NavigationStack {
-                JSONPickerView { url in
-                    globals.selectedJSONURL = url
-                    do {
-                        let data = try Data(contentsOf: url)
-                        let preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
-                        globals.openedJSONPreview = String(preview.prefix(2000))
-                    } catch {
-                        globals.openedJSONPreview = "Failed to read JSON: \(error.localizedDescription)"
-                    }
-                    showJSONPicker = false
-                }
-                .navigationTitle("Open JSON")
-            }
-        }
-        .sheet(isPresented: $showGallery) {
-            if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
-                if #available(iOS 16.0, *) {
-                    PhotoBrowserView(folderURL: folder, indexURL: idx)
-                } else {
-                    Text("Requires iOS 16.0 or later.")
-                        .padding()
-                }
-            } else {
-                ImagesListView()
-            }
-        }
-        .sheet(isPresented: $showFilteredPhotos) {
-            if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
-                if #available(iOS 16.0, *) {
-                    FilteredPhotoBrowserView(folderURL: folder, indexURL: idx, filterNames: filteredNamesForPhotos)
-                } else {
-                    Text("Requires iOS 16.0 or later.")
-                        .padding()
-                }
-            } else {
-                Text("Select a storage folder and photo index first.")
-                    .padding()
-            }
-        }
-        .sheet(isPresented: $showFamilyTree) {
-            NavigationStack {
-                FamilyTreeView()
-                    .navigationTitle("Family Tree")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showFamilyTree = false }
-                        }
-                    }
-            }
-        }
-        .sheet(isPresented: $showFileHandling) {
-            NavigationStack {
-                FileHandlingView(command: pendingFileHandlingCommand)
-                    .navigationTitle("File Handling")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showFileHandling = false }
-                        }
-                    }
-            }
-        }
-        .sheet(isPresented: $showIndividualEntry) {
-            NavigationStack {
-                FamilyDataInputView()
-                    .navigationTitle("Individual Entry")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") {
-                                // Keep edits as-is
-                                showIndividualEntry = false
-                            }
-                        }
-                    }
-            }
-        }
-        .sheet(isPresented: $showBulkEditor) {
-            BulkEditorSheet(
-                isPresented: $showBulkEditor,
-                bulkText: $bulkText,
-                showConfirmation: $showConfirmation,
-                showSuccess: $showSuccess,
-                successMessage: $successMessage
-            )
-        }
-        ///This will call the Name Prompt Sheet . I modified it not to allow duplicate names
-        .sheet(isPresented: $showNamePrompt) {
-            NamePromptSheet(
-                isPresented: $showNamePrompt,
-                tempNameInput: $tempNameInput,
-                onConfirm: { name in
-                    pendingPhotoName = name
-                    showPhotoImporter = true
-                },
-                existingNames: {
-                    if let idx = globals.selectedJSONURL, let names = try? readIndexNames(from: idx) {
-                        return names
-                    } else {
-                        return []
-                    }
-                }()
-            )
-        }
-        
+        attachSheets(to: base)
     }
 
     var body: some View {
