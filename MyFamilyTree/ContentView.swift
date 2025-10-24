@@ -181,12 +181,23 @@ struct ContentView: View {
             }
         }
     }
-    
+    //=========
+    //MAIN Menu
+    //=========
     @ToolbarContentBuilder
     private var mainToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            LocationMenu(showFolderPicker: $showFolderPicker, folderPathDisplay: folderPathDisplay, isFolderSelected: isFolderSelected)
+            LocationMenu(
+                showFolderPicker: $showFolderPicker,
+                folderPathDisplay: folderPathDisplay,
+                isFolderSelected: isFolderSelected,
+                onSelectFolderTapped: {
+                    // Menu was triggered to select a folder; actual URL assignment happens in FolderPickerView completion
+                }
+            )
+            
         }
+        
         ToolbarItem(placement: .topBarLeading) {
             fileHandlingMenu
         }
@@ -200,7 +211,8 @@ struct ContentView: View {
             photosToolbarMenu
         }
     }
-
+    //FILE HANDLING MENU
+    //===================
     private var fileHandlingMenu: some View {
         Menu {
             Button("Save to Text File") {
@@ -222,27 +234,29 @@ struct ContentView: View {
             }
             .disabled(dataManager.membersDictionary.isEmpty)
             Button("Append from a Tree File") {
+                if globals.selectedFolderURL == nil {
+                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+                    showAlert = true
+                    return
+                }
                 pendingFileHandlingCommand = .importAppend
-                if globals.selectedFolderURL == nil {
-                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
-                    showAlert = true
-                    return
-                }
-                DispatchQueue.main.async { showFileHandling = true }
             }
+            .disabled(globals.selectedFolderURL == nil)
             Button("Load from a Tree File") {
-                pendingFileHandlingCommand = .importLoad
                 if globals.selectedFolderURL == nil {
                     alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
                     showAlert = true
                     return
                 }
-                DispatchQueue.main.async { showFileHandling = true }
+                pendingFileHandlingCommand = .importLoad
             }
+            .disabled(globals.selectedFolderURL == nil)
         } label: { Text("File Handling") }
         .font(.footnote)
     }
-
+    //================
+    //DATA ENTRY MENU
+    //================
     private var dataEntryMenu: some View {
         Menu {
             Button("Paste/Parse Bulk Data") { showBulkEditor = true }
@@ -257,7 +271,9 @@ struct ContentView: View {
         } label: { Text("Data Entry") }
         .font(.footnote)
     }
-
+    //==============
+    //TREE VIEW MENU
+    //===============
     private var viewMenu: some View {
         Menu {
             Button {
@@ -272,7 +288,9 @@ struct ContentView: View {
         } label: { Text("View") }
         .font(.footnote)
     }
-
+    //===========
+    // PHOTO MENU
+    //===========
     private var photosToolbarMenu: some View {
         PhotosMenu(
             showGallery: $showGallery,
@@ -286,6 +304,7 @@ struct ContentView: View {
             showSuccess: $showSuccess,
             successMessage: $successMessage
         )
+        .disabled(globals.selectedFolderURL == nil)
     }
     
     private func attachSheets<V: View>(to view: V) -> some View {
@@ -293,8 +312,16 @@ struct ContentView: View {
             .sheet(isPresented: $showFolderPicker) {
                 NavigationStack {
                     FolderPickerView { url in
+                        //SET THE GLOBAL FOLDER LOCATION HERE. IT SHOULD BE SET GLOBALLY
                         if url.startAccessingSecurityScopedResource() {
                             globals.selectedFolderURL = url
+                            // Ensure a photo index exists and set selectedJSONURL so File Handling works immediately
+                            do {
+                                let idx = try StorageManager.shared.ensurePhotoIndex(in: url, fileName: "photo-index.json")
+                                globals.selectedJSONURL = idx
+                            } catch {
+                                // Non-blocking: log or show a soft alert if desired
+                            }
                             showFolderPicker = false
                         } else {
                             alertMessage = "Couldn’t access the selected folder. Please try a different location."
@@ -359,13 +386,30 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showFileHandling) {
                 NavigationStack {
-                    FileHandlingView(command: pendingFileHandlingCommand)
-                        .navigationTitle("File Handling")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { showFileHandling = false }
+                    if let cmd = pendingFileHandlingCommand {
+                        FileHandlingView(command: cmd)
+                            .navigationTitle("File Handling")
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") {
+                                        showFileHandling = false
+                                        pendingFileHandlingCommand = nil
+                                    }
+                                }
                             }
-                        }
+                    } else {
+                        // Fallback if sheet presented before command is ready
+                        Text("Preparing…")
+                            .onAppear {
+                                // print removed
+                            }
+                            .navigationTitle("File Handling")
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showFileHandling = false }
+                                }
+                            }
+                    }
                 }
             }
             .sheet(isPresented: $showIndividualEntry) {
@@ -495,6 +539,12 @@ struct ContentView: View {
             guard let item = newItem else { return }
             Task { await handlePickedItem(item) }
         }
+        .onChange(of: pendingFileHandlingCommand) { _, newValue in
+            if newValue != nil {
+                // print removed
+                showFileHandling = true
+            }
+        }
         .toolbar { mainToolbar }
 
         attachSheets(to: base)
@@ -510,4 +560,3 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
-

@@ -152,8 +152,7 @@ struct FileHandlingView: View {
     
     private func handleExportResult(_ result: Result<URL, Error>) {
         switch result {
-        case .success(let url):
-            //alertMessage = "Successfully saved to \(url.lastPathComponent)"
+        case .success(_):
             alertMessage = "Successfully saved "
             showingAlert = true
         case .failure(let error):
@@ -165,7 +164,9 @@ struct FileHandlingView: View {
     private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
         switch result {
         case .success(let url):
-            guard url.startAccessingSecurityScopedResource() else {
+            
+            let started = url.startAccessingSecurityScopedResource()
+            guard started else {
                 alertMessage = "Access to the selected file was denied."
                 showingAlert = true
                 return
@@ -179,6 +180,7 @@ struct FileHandlingView: View {
                 let data = try Data(contentsOf: url)
                 let decoder = JSONDecoder()
                 let importedMembers = try decoder.decode([FamilyMember].self, from: data)
+                let count = importedMembers.count
                 
                 if isAppending {
                     for member in importedMembers {
@@ -192,15 +194,13 @@ struct FileHandlingView: View {
                             manager.membersDictionary[member.name] = member
                         }
                     }
-                    //alertMessage = "Successfully appended data from \(url.lastPathComponent)"
-                    alertMessage = "Successfully appended data "
+                    alertMessage = "Successfully appended \(count) member(s)."
                 } else {
                     manager.membersDictionary.removeAll()
                     for member in importedMembers {
                         manager.membersDictionary[member.name] = member
                     }
-                    //alertMessage = "Successfully loaded data from \(url.lastPathComponent)"
-                    alertMessage = "Successfully loaded data "
+                    alertMessage = "Successfully loaded \(count) member(s)."
                 }
                 
                 manager.linkFamilyRelations()
@@ -218,3 +218,4 @@ struct FileHandlingView: View {
         }
     }
 }
+
