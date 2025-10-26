@@ -27,6 +27,24 @@ struct FamilyDataInputView: View {
     @State private var isCreatingNew: Bool = false
     @State private var originalEditingName: String? = nil
     
+    @State private var originalMemberSnapshot: FamilyMember? = nil
+    private var hasExplicitChanges: Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentParents = parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
+        let currentSpouses = spouses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
+        let currentChildren = children.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
+        // Siblings are treated as potentially inferred; do not enable Update based solely on siblings changes
+        guard let snap = originalMemberSnapshot else {
+            // In create mode, require non-empty name and at least one explicit field change (name is enough)
+            return !trimmedName.isEmpty
+        }
+        let nameChanged = trimmedName != snap.name
+        let parentsChanged = currentParents != snap.parents.sorted()
+        let spousesChanged = currentSpouses != snap.spouses.sorted()
+        let childrenChanged = currentChildren != snap.children.sorted()
+        return nameChanged || parentsChanged || spousesChanged || childrenChanged
+    }
+    
     var memberNames: [String] {
         manager.membersDictionary.keys.sorted()
     }
@@ -58,6 +76,7 @@ struct FamilyDataInputView: View {
                             clearPersonFields()
                             isCreatingNew = true
                             originalEditingName = nil
+                            originalMemberSnapshot = nil
                             // Put index out of bounds to prevent displayCurrentMember() from showing old data accidentally
                             currentMemberIndex = 0
                         }
@@ -88,29 +107,8 @@ struct FamilyDataInputView: View {
                         //ADD PERSON (now Update)
                         Button(msg6) {
                             let inputName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let finalName: String
-                            if inputName.isEmpty {
-                                // Generate a unique placeholder name only when creating new
-                                if isCreatingNew {
-                                    let base = "New Member"
-                                    if !manager.membersDictionary.keys.contains(base) {
-                                        finalName = base
-                                    } else {
-                                        var counter = 2
-                                        var candidate = "\(base) \(counter)"
-                                        while manager.membersDictionary.keys.contains(candidate) {
-                                            counter += 1
-                                            candidate = "\(base) \(counter)"
-                                        }
-                                        finalName = candidate
-                                    }
-                                } else {
-                                    // Editing existing: keep original name if input empty
-                                    finalName = originalEditingName ?? inputName
-                                }
-                            } else {
-                                finalName = inputName
-                            }
+                            guard !inputName.isEmpty else { return }
+                            let finalName = inputName
 
                             let newMember = FamilyMember(
                                 name: finalName,
@@ -125,55 +123,49 @@ struct FamilyDataInputView: View {
                             )
 
                             if isCreatingNew {
-                                // Always add as new; if name collides, generate a unique suffix
-                                var uniqueName = newMember.name
-                                if manager.membersDictionary.keys.contains(uniqueName) {
-                                    var counter = 2
-                                    var candidate = "\(uniqueName) \(counter)"
-                                    while manager.membersDictionary.keys.contains(candidate) {
-                                        counter += 1
-                                        candidate = "\(uniqueName) \(counter)"
-                                    }
-                                    uniqueName = candidate
+                                if manager.membersDictionary.keys.contains(finalName) {
+                                    showDuplicateAlert = true
+                                    return
                                 }
-                                var memberToAdd = newMember
-                                memberToAdd.name = uniqueName
-                                addMember(memberToAdd)
-                                // Reflect exactly what was added to avoid any stale data
-                                name = memberToAdd.name
-                                parents = memberToAdd.parents.joined(separator: ", ")
-                                spouses = memberToAdd.spouses.joined(separator: ", ")
-                                children = memberToAdd.children.joined(separator: ", ")
-                                siblings = memberToAdd.siblings.joined(separator: ", ")
+                                addMember(newMember)
+                                originalEditingName = finalName
+                                originalMemberSnapshot = newMember
                                 isCreatingNew = false
-                                originalEditingName = uniqueName
                             } else {
-                                // Strict update path: if name changed and conflicts with another, adjust to avoid overwriting
-                                if let original = originalEditingName, original != finalName, manager.membersDictionary.keys.contains(finalName) {
-                                    // Name taken by someone else; keep original name for this update
-                                    var adjusted = newMember
-                                    adjusted.name = original
-                                    updateMember(adjusted)
-                                    originalEditingName = original
-                                } else if let original = originalEditingName, original != finalName {
-                                    // Rename: remove old key, insert new
-                                    manager.membersDictionary.removeValue(forKey: original)
-                                    addMember(newMember)
-                                    originalEditingName = finalName
+                                if let original = originalEditingName {
+                                    if original != finalName && manager.membersDictionary.keys.contains(finalName) {
+                                        // Name taken by someone else; show duplicate alert and do not update
+                                        showDuplicateAlert = true
+                                        return
+                                    } else if original != finalName {
+                                        // Rename: remove old key, insert new
+                                        manager.membersDictionary.removeValue(forKey: original)
+                                        addMember(newMember)
+                                        originalEditingName = finalName
+                                        originalMemberSnapshot = newMember
+                                    } else {
+                                        // Normal update
+                                        updateMember(newMember)
+                                        originalEditingName = finalName
+                                        originalMemberSnapshot = newMember
+                                    }
                                 } else {
-                                    // Normal update
+                                    // No original name, treat as normal update
                                     updateMember(newMember)
                                     originalEditingName = finalName
+                                    originalMemberSnapshot = newMember
                                 }
                             }
 
-                            // Navigate to and display the updated/added member
-                            if let idx = memberNames.firstIndex(of: originalEditingName ?? finalName) {
-                                currentMemberIndex = idx
+                            DispatchQueue.main.async {
+                                if let idx = memberNames.firstIndex(of: finalName) {
+                                    currentMemberIndex = idx
+                                    displayCurrentMember()
+                                }
                             }
-                            displayCurrentMember()
                         }
                         .buttonStyle(.bordered)
+                        .disabled(!hasExplicitChanges || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Spacer()
                         //---------------------
                         //DELETE MEMBER
@@ -227,6 +219,7 @@ struct FamilyDataInputView: View {
                 currentMemberIndex = 0
                 clearPersonFields()
                 originalEditingName = nil
+                originalMemberSnapshot = nil
                 isCreatingNew = true
             } else {
                 currentMemberIndex = min(currentMemberIndex, memberNames.count - 1)
@@ -269,6 +262,7 @@ struct FamilyDataInputView: View {
             currentMemberIndex = 0
             clearPersonFields()
             originalEditingName = nil
+            originalMemberSnapshot = nil
         } else {
             currentMemberIndex = min(currentMemberIndex, max(0, memberNames.count - 1))
             displayCurrentMember()
@@ -297,6 +291,7 @@ struct FamilyDataInputView: View {
         guard !memberNames.isEmpty else {
             clearPersonFields()
             originalEditingName = nil
+            originalMemberSnapshot = nil
             return
         }
         if currentMemberIndex >= memberNames.count {
@@ -310,8 +305,10 @@ struct FamilyDataInputView: View {
             children = member.children.joined(separator: ", ")
             siblings = member.siblings.joined(separator: ", ")
             originalEditingName = member.name
+            originalMemberSnapshot = member
         } else {
             originalEditingName = nil
+            originalMemberSnapshot = nil
         }
         
     }
