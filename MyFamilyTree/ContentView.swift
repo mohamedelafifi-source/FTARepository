@@ -261,7 +261,7 @@ struct ContentView: View {
         Menu {
             Button("Paste/Parse Bulk Data") { showBulkEditor = true }
             Divider()
-            Button("Individual Entry") {
+            Button("Enter/Edit by Member") {
                 originalMembers = FamilyDataManager.shared.membersDictionary
                 showIndividualEntry = true
             }
@@ -415,7 +415,7 @@ struct ContentView: View {
             .sheet(isPresented: $showIndividualEntry) {
                 NavigationStack {
                     FamilyDataInputView()
-                        .navigationTitle("Individual Entry")
+                        .navigationTitle("Enter/Edit By Member")
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button("Done") { showIndividualEntry = false }
@@ -477,7 +477,9 @@ struct ContentView: View {
             case .success(let url):
                 let folder = url.deletingLastPathComponent()
                 let folderDisplay = folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-                successMessage = "Saved to \(folderDisplay)/\(url.lastPathComponent)"
+                //No Need to show the path
+                //successMessage = "Saved to \(folderDisplay)/\(url.lastPathComponent)"
+                successMessage = "Saved "
                 showSuccess = true
             case .failure(let error):
                 let nsErr = error as NSError
