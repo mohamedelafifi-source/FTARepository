@@ -76,6 +76,7 @@ struct TextDocument: FileDocument {
 
 struct FileHandlingView: View {
     var command: FileHandlingCommand? = nil
+    var preselectedURL: URL? = nil
     @ObservedObject var manager = FamilyDataManager.shared
     
     @State private var isExportingJSON = false
@@ -117,6 +118,7 @@ struct FileHandlingView: View {
             isPresented: $isImporting,
             allowedContentTypes: [.json]
         ) { result in
+            print("DEBUG FileHandlingView fileImporter presented, action:", String(describing: importAction), "time:", Date())
             guard let action = self.importAction else { return }
             switch action {
             case .load:
@@ -130,6 +132,7 @@ struct FileHandlingView: View {
             Button("OK", role: .cancel) { }
         }
         .onAppear {
+            print("DEBUG FileHandlingView onAppear, command:", String(describing: command), "time:", Date())
             guard let command else { return }
             DispatchQueue.main.async {
                 switch command {
@@ -141,10 +144,20 @@ struct FileHandlingView: View {
                     importAction = .append
                     isImporting = true
                 case .importLoad:
-                    importAction = .load
-                    isImporting = true
+                    if let url = preselectedURL {
+                        print("DEBUG FH will try preselectedURL:", url)
+                        // Load immediately without showing a picker
+                        processImportedFile(.success(url), isAppending: false)
+                    } else {
+                        print("DEBUG FH no preselectedURL; skipping load")
+                        // No preselected URL; do nothing (ContentView should provide it)
+                        break
+                    }
                 }
             }
+        }
+        .onDisappear {
+            print("DEBUG FileHandlingView onDisappear time:", Date())
         }
     }
     
@@ -164,6 +177,7 @@ struct FileHandlingView: View {
     private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
         switch result {
         case .success(let url):
+            print("DEBUG FH processing URL:", url)
             
             let started = url.startAccessingSecurityScopedResource()
             guard started else {
@@ -180,34 +194,44 @@ struct FileHandlingView: View {
                 let data = try Data(contentsOf: url)
                 let decoder = JSONDecoder()
                 let importedMembers = try decoder.decode([FamilyMember].self, from: data)
+                print("DEBUG FH decoded members count:", importedMembers.count)
+                print("DEBUG FH starting dictionary update, appending:", isAppending)
                 let count = importedMembers.count
                 
-                if isAppending {
-                    for member in importedMembers {
-                        if var existingMember = manager.membersDictionary[member.name] {
-                            existingMember.parents.append(contentsOf: member.parents.filter { !existingMember.parents.contains($0) })
-                            existingMember.spouses.append(contentsOf: member.spouses.filter { !existingMember.spouses.contains($0) })
-                            existingMember.children.append(contentsOf: member.children.filter { !existingMember.children.contains($0) })
-                            existingMember.siblings.append(contentsOf: member.siblings.filter { !existingMember.siblings.contains($0) })
-                            manager.membersDictionary[member.name] = existingMember
-                        } else {
+                DispatchQueue.main.async {
+                    if isAppending {
+                        for member in importedMembers {
+                            if var existingMember = manager.membersDictionary[member.name] {
+                                existingMember.parents.append(contentsOf: member.parents.filter { !existingMember.parents.contains($0) })
+                                existingMember.spouses.append(contentsOf: member.spouses.filter { !existingMember.spouses.contains($0) })
+                                existingMember.children.append(contentsOf: member.children.filter { !existingMember.children.contains($0) })
+                                existingMember.siblings.append(contentsOf: member.siblings.filter { !existingMember.siblings.contains($0) })
+                                manager.membersDictionary[member.name] = existingMember
+                            } else {
+                                manager.membersDictionary[member.name] = member
+                            }
+                        }
+                        alertMessage = "Successfully appended \(count) member(s)."
+                    } else {
+                        manager.membersDictionary.removeAll()
+                        for member in importedMembers {
                             manager.membersDictionary[member.name] = member
                         }
+                        alertMessage = "Successfully loaded \(count) member(s)."
                     }
-                    alertMessage = "Successfully appended \(count) member(s)."
-                } else {
-                    manager.membersDictionary.removeAll()
-                    for member in importedMembers {
-                        manager.membersDictionary[member.name] = member
-                    }
-                    alertMessage = "Successfully loaded \(count) member(s)."
+                    print("DEBUG FH dictionary update done. Count now:", manager.membersDictionary.count)
+                    print("DEBUG FH calling linkFamilyRelations")
+                    manager.linkFamilyRelations()
+                    print("DEBUG FH linkFamilyRelations done")
+                    print("DEBUG FH calling assignLevels")
+                    manager.assignLevels()
+                    print("DEBUG FH assignLevels done")
+                    print("DEBUG FH will show alert:", alertMessage)
+                    showingAlert = true
                 }
                 
-                manager.linkFamilyRelations()
-                manager.assignLevels()
-                showingAlert = true
-                
             } catch {
+                print("DEBUG FH decode error:", error)
                 alertMessage = "Error processing file: \(error.localizedDescription)"
                 showingAlert = true
             }

@@ -38,6 +38,7 @@ class FamilyDataManager: ObservableObject {
 
     @Published var membersDictionary: [String: FamilyMember] = [:]
     @Published var focusedMemberId: UUID? = nil
+    @Published var isDirty: Bool = false
 
     var members: [FamilyMember] {
         Array(membersDictionary.values)
@@ -310,6 +311,7 @@ class FamilyDataManager: ObservableObject {
             let encoder = JSONEncoder()
             let data = try encoder.encode(Array(membersDictionary.values))
             UserDefaults.standard.set(data, forKey: userDefaultsKey)
+            self.isDirty = false
         } catch {
             print("❌ Failed to save family data: \(error)")
         }
@@ -329,6 +331,7 @@ class FamilyDataManager: ObservableObject {
                 newDict[member.name] = member
             }
             membersDictionary = newDict
+            self.isDirty = false
 
             if inferSiblings { inferSiblingsFromParents() }
             if reassignLevels { assignLevels() }
@@ -538,6 +541,116 @@ class FamilyDataManager: ObservableObject {
             }
         }
         return sorted
+    }
+
+    // MARK: - Derivation on Copy (non-mutating to membersDictionary)
+    func makeDerivedDictionaryForDisplay(applySiblingInference: Bool = true) -> [String: FamilyMember] {
+        var derived = membersDictionary // start from authored data
+        linkFamilyRelations(on: &derived)
+        if applySiblingInference { inferSiblingsFromParents(on: &derived) }
+        assignLevels(on: &derived)
+        return derived
+    }
+
+    // Pure versions that work on a dictionary copy
+    func linkFamilyRelations(on dict: inout [String: FamilyMember]) {
+        var updated = dict
+        func addUnique(_ name: String, to list: inout [String]) { if !list.contains(name) { list.append(name) } }
+        // Mutual spouses
+        for (name, member) in dict {
+            for spouseName in member.spouses {
+                guard var spouse = updated[spouseName] else { continue }
+                addUnique(name, to: &spouse.spouses)
+                updated[spouseName] = spouse
+            }
+        }
+        // Parent/child consistency
+        for (name, member) in dict {
+            for parentName in member.parents {
+                guard var parent = updated[parentName] else { continue }
+                addUnique(name, to: &parent.children)
+                updated[parentName] = parent
+            }
+            for childName in member.children {
+                guard var child = updated[childName] else { continue }
+                addUnique(name, to: &child.parents)
+                updated[childName] = child
+            }
+        }
+        // Mutual siblings
+        for (name, member) in dict {
+            for siblingName in member.siblings where siblingName != name {
+                guard var sibling = updated[siblingName] else { continue }
+                addUnique(name, to: &sibling.siblings)
+                updated[siblingName] = sibling
+            }
+        }
+        // Dedup and sort
+        for (name, var member) in updated {
+            member.parents = Array(Set(member.parents)).sorted()
+            member.children = Array(Set(member.children)).sorted()
+            member.spouses = Array(Set(member.spouses)).sorted()
+            member.siblings = Array(Set(member.siblings.filter { $0 != name })).sorted()
+            updated[name] = member
+        }
+        dict = updated
+    }
+
+    func inferSiblingsFromParents(on dict: inout [String: FamilyMember]) {
+        let groupedByParents = Dictionary(grouping: dict.values) { $0.parents.sorted().joined(separator: "|") }
+        for group in groupedByParents.values where group.count > 1 {
+            let siblingNames = group.map { $0.name }
+            for member in group {
+                guard var currentMember = dict[member.name] else { continue }
+                let existing = Set(currentMember.siblings)
+                let newOnes = Set(siblingNames.filter { $0 != member.name })
+                currentMember.siblings = Array(existing.union(newOnes))
+                dict[member.name] = currentMember
+            }
+        }
+    }
+
+    func assignLevels(on dict: inout [String: FamilyMember]) {
+        // reset levels
+        for key in dict.keys { dict[key]?.level = -1 }
+        var assignedCount = 0
+        let total = dict.count
+        var changed = true
+        while changed && assignedCount < total {
+            changed = false
+            for name in dict.keys {
+                guard var member = dict[name] else { continue }
+                if member.parents.isEmpty && member.level == -1 {
+                    member.level = 0
+                    dict[name] = member
+                    changed = true
+                    assignedCount += 1
+                    continue
+                }
+                if member.level == -1 {
+                    for parentName in member.parents {
+                        if let parent = dict[parentName], parent.level != -1 {
+                            member.level = parent.level + 1
+                            dict[name] = member
+                            changed = true
+                            assignedCount += 1
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        changed = true
+        while changed {
+            changed = false
+            for name in dict.keys {
+                guard var member = dict[name], member.level == -1 else { continue }
+                var found: Int? = nil
+                for siblingName in member.siblings { if let s = dict[siblingName], s.level != -1 { found = s.level; break } }
+                if found == nil { for spouseName in member.spouses { if let sp = dict[spouseName], sp.level != -1 { found = sp.level; break } } }
+                if let lvl = found { member.level = lvl; dict[name] = member; changed = true; assignedCount += 1 }
+            }
+        }
     }
 }
 

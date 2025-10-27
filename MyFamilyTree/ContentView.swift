@@ -78,6 +78,12 @@ struct ContentView: View {
     // New state variables for filtered photo view
     @State private var showFilteredPhotos = false
     @State private var filteredNamesForPhotos: [String] = []
+    @State private var isHandlingJSONPick = false
+    
+    @State private var pendingLoadURL: URL? = nil
+    
+    // Added state for system file importer for JSON tree file loading
+    @State private var showJSONFileImporter = false
     
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
@@ -243,12 +249,16 @@ struct ContentView: View {
             }
             .disabled(globals.selectedFolderURL == nil)
             Button("Load from a Tree File") {
+                print("DEBUG Load button tapped, importer:", showJSONFileImporter, "fileHandling:", showFileHandling, "time:", Date())
                 if globals.selectedFolderURL == nil {
                     alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
                     showAlert = true
                     return
                 }
-                pendingFileHandlingCommand = .importLoad
+                // Guard against re-entry while importer or file handling is active
+                guard !showJSONFileImporter && !showFileHandling else { return }
+                // Use system file importer to choose any JSON file to load
+                showJSONFileImporter = true
             }
             .disabled(globals.selectedFolderURL == nil)
         } label: { Text("File Handling") }
@@ -332,22 +342,14 @@ struct ContentView: View {
                     .navigationTitle("Select Folder")
                 }
             }
-            .sheet(isPresented: $showJSONPicker) {
-                NavigationStack {
-                    JSONPickerView { url in
-                        globals.selectedJSONURL = url
-                        do {
-                            let data = try Data(contentsOf: url)
-                            let preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
-                            globals.openedJSONPreview = String(preview.prefix(2000))
-                        } catch {
-                            globals.openedJSONPreview = "Failed to read JSON: \(error.localizedDescription)"
-                        }
-                        showJSONPicker = false
+            // Temporarily disabled JSON picker sheet to avoid interference with Load flow
+            .background(
+                Group {
+                    if false {
+                        EmptyView()
                     }
-                    .navigationTitle("Open JSON")
                 }
-            }
+            )
             .sheet(isPresented: $showGallery) {
                 if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
                     if #available(iOS 16.0, *) {
@@ -384,10 +386,10 @@ struct ContentView: View {
                         }
                 }
             }
-            .sheet(isPresented: $showFileHandling) {
+            .fullScreenCover(isPresented: $showFileHandling) {
                 NavigationStack {
                     if let cmd = pendingFileHandlingCommand {
-                        FileHandlingView(command: cmd)
+                        FileHandlingView(command: cmd, preselectedURL: globals.selectedJSONURL)
                             .navigationTitle("File Handling")
                             .toolbar {
                                 ToolbarItem(placement: .topBarTrailing) {
@@ -398,7 +400,7 @@ struct ContentView: View {
                                 }
                             }
                     } else {
-                        // Fallback if sheet presented before command is ready
+                        // Fallback if presentation occurs before command is ready
                         Text("Preparing…")
                             .onAppear {
                                 // print removed
@@ -541,11 +543,66 @@ struct ContentView: View {
             guard let item = newItem else { return }
             Task { await handlePickedItem(item) }
         }
+        /*
+        Removed automatic presentation of FileHandlingView on pendingFileHandlingCommand change:
         .onChange(of: pendingFileHandlingCommand) { _, newValue in
             if newValue != nil {
                 // print removed
                 showFileHandling = true
             }
+        }
+        */
+        .onChange(of: showJSONPicker) { oldValue, newValue in
+            // When the JSON picker is dismissed and we have a URL, proceed to load
+            if oldValue == true && newValue == false, let url = pendingLoadURL {
+                globals.selectedJSONURL = url
+                pendingFileHandlingCommand = .importLoad
+                showFileHandling = true
+                pendingLoadURL = nil
+            }
+        }
+        .fileImporter(
+            isPresented: $showJSONFileImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            print("DEBUG importer result:", result, "time:", Date())
+            switch result {
+            case .success(let urls):
+                guard !showFileHandling else { return } // already presenting
+                if let url = urls.first {
+                    if globals.selectedJSONURL != url {
+                        globals.selectedJSONURL = url
+                        do {
+                            let data = try Data(contentsOf: url)
+                            let preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
+                            globals.openedJSONPreview = String(preview.prefix(2000))
+                        } catch {
+                            globals.openedJSONPreview = "Failed to read JSON: \(error.localizedDescription)"
+                        }
+                    }
+                    pendingFileHandlingCommand = .importLoad
+                    if !showFileHandling {
+                        showFileHandling = true
+                    }
+                    // Ensure importer is off to prevent re-presentation
+                    showJSONFileImporter = false
+                }
+            case .failure(let error):
+                alertMessage = error.localizedDescription
+                showAlert = true
+                // Ensure importer is off in case of failure
+                showJSONFileImporter = false
+            }
+        }
+        .onChange(of: showJSONFileImporter) { old, new in
+            print("DEBUG showJSONFileImporter:", old, "->", new, "time:", Date())
+        }
+        .onChange(of: showFileHandling) { old, new in
+            print("DEBUG showFileHandling:", old, "->", new, "time:", Date())
+        }
+        .onChange(of: pendingFileHandlingCommand) { old, new in
+            print("DEBUG pendingFileHandlingCommand:", String(describing: old), "->", String(describing: new), "time:", Date())
         }
         .toolbar { mainToolbar }
 
@@ -562,3 +619,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+

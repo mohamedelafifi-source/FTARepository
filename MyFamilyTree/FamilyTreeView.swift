@@ -79,17 +79,82 @@ struct FamilyTreeView: View {
     // Add a state variable to hold the calculated button size
     @State private var buttonSize: CGSize = .zero
     
-    var grouped: [LevelGroup] {
-        if let focus = manager.focusedMemberId {
-            return manager.getConnectedFamilyOf(memberId: focus)
-        } else {
-            return manager.getAllLevels()
+    @State private var derivedDict: [String: FamilyMember] = [:]
+    
+    private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
+        var visited = Set<String>()
+        var levels: [Int: [FamilyMember]] = [:]
+        func assignLevel(_ member: FamilyMember, level: Int) {
+            guard !visited.contains(member.name) else { return }
+            visited.insert(member.name)
+            levels[level, default: []].append(member)
+            for spouseName in member.spouses { if let spouse = dict[spouseName] { assignLevel(spouse, level: level) } }
+            for childName in member.children { if let child = dict[childName] { assignLevel(child, level: level + 1) } }
         }
+        let allMembers = Array(dict.values)
+        let topLevel = allMembers.filter { $0.parents.isEmpty }
+        for member in topLevel { assignLevel(member, level: 0) }
+        return levels.keys.sorted().compactMap { lvl in
+            if let membersAtLevel = levels[lvl] { return LevelGroup(level: lvl, members: membersAtLevel) } else { return nil }
+        }
+    }
+    
+    private func buildConnectedGroups(from dict: [String: FamilyMember], focusId: UUID) -> [LevelGroup] {
+        guard let focusedMember = dict.first(where: { $0.value.id == focusId })?.value else { return [] }
+        var finalNames = Set<String>()
+        finalNames.insert(focusedMember.name)
+        for spouse in focusedMember.spouses { finalNames.insert(spouse) }
+        for sib in focusedMember.siblings { finalNames.insert(sib) }
+        var currentAncestors = focusedMember.parents
+        var visitedAnc = Set(currentAncestors)
+        var depth = 0
+        let maxDepth = 2
+        while !currentAncestors.isEmpty && depth < maxDepth {
+            var next: [String] = []
+            for anc in currentAncestors {
+                finalNames.insert(anc)
+                if let a = dict[anc] {
+                    for s in a.spouses { finalNames.insert(s) }
+                    for p in a.parents where visitedAnc.insert(p).inserted { next.append(p) }
+                }
+            }
+            currentAncestors = next
+            depth += 1
+        }
+        var visitedDesc = Set<String>()
+        func collectDesc(of name: String) {
+            guard let m = dict[name] else { return }
+            for child in m.children where visitedDesc.insert(child).inserted {
+                finalNames.insert(child)
+                if let c = dict[child] { for s in c.spouses { finalNames.insert(s) } }
+                collectDesc(of: child)
+            }
+        }
+        collectDesc(of: focusedMember.name)
+        let relativeLevels = manager.computeRelativeLevels(from: focusedMember.name, using: dict)
+        var finalMembers: [FamilyMember] = []
+        let relevant = finalNames.filter { relativeLevels.keys.contains($0) }
+        let minLevel = relevant.compactMap { relativeLevels[$0] }.min() ?? 0
+        let adjust = (minLevel < 0) ? -minLevel : 0
+        for name in relevant { if let m = dict[name], let rl = relativeLevels[name] { var mm = m; mm.level = rl + adjust; finalMembers.append(mm) } }
+        let grouped = Dictionary(grouping: finalMembers, by: { $0.level })
+        var levelGroups: [LevelGroup] = []
+        for level in grouped.keys.sorted() { if let mems = grouped[level] { let sortedMems = manager.sortLevel(mems, focused: focusedMember); levelGroups.append(LevelGroup(level: level, members: sortedMems)) } }
+        return levelGroups
     }
     
     func color(for level: Int) -> Color {
         let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal]
         return palette[level % palette.count]
+    }
+    
+    var grouped: [LevelGroup] {
+        if derivedDict.isEmpty { return [] }
+        if let focus = manager.focusedMemberId {
+            return buildConnectedGroups(from: derivedDict, focusId: focus)
+        } else {
+            return buildAllLevels(from: derivedDict)
+        }
     }
     
     var body: some View {
@@ -103,11 +168,28 @@ struct FamilyTreeView: View {
                         .padding(.bottom, 5)
                 }
                 
-                if manager.focusedMemberId != nil {
-                    Button("Show Full Tree") {
-                        manager.focusedMemberId = nil
+                HStack {
+                    Button("Refresh Tree") {
+                        derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
                     }
-                    .padding()
+                    .buttonStyle(.bordered)
+
+                    if manager.focusedMemberId != nil {
+                        Button("Show Full Tree") {
+                            manager.focusedMemberId = nil
+                            // Also refresh derived view when switching scope
+                            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding()
+                
+                if manager.isDirty {
+                    Text("You have unsaved changes. Use File > Save to persist your authored data.")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal)
                 }
                 
                 ScrollView(.vertical) {
@@ -156,7 +238,7 @@ struct FamilyTreeView: View {
                 .opacity(0) // Hide the view
             
             let visibleNames = grouped.flatMap { $0.members.map { $0.name } }
-            let visibleMembers = manager.members.filter { visibleNames.contains($0.name) }
+            let visibleMembers = derivedDict.values.filter { visibleNames.contains($0.name) }
             
             
             if !anchorMap.isEmpty && buttonSize != .zero {
@@ -174,6 +256,7 @@ struct FamilyTreeView: View {
             
             
         }
+        .onAppear { derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true) }
     }
 }
 

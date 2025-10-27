@@ -189,6 +189,11 @@ struct FamilyDataInputView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
+                    Text("You are editing your authored data. The Family Tree view is derived (with inferred relationships) and read-only.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
         }
@@ -233,8 +238,9 @@ struct FamilyDataInputView: View {
     ///////MARK :Clear all data whether bulk or individual
     func clearAllData() {
         manager.membersDictionary.removeAll()
-        manager.linkFamilyRelations()
-        manager.assignLevels()
+        manager.isDirty = true
+        // manager.linkFamilyRelations()
+        // manager.assignLevels()
         // Reset UI state after clearing in-memory data
         currentMemberIndex = 0
         clearPersonFields()
@@ -243,20 +249,23 @@ struct FamilyDataInputView: View {
     // MARK: - Add Individual Member
     func addMember(_ member: FamilyMember) {
         manager.membersDictionary[member.name] = member
-        manager.linkFamilyRelations()
-        manager.assignLevels()
+        manager.isDirty = true
+        // manager.linkFamilyRelations()
+        // manager.assignLevels()
     }
     // MARK: - Update Existing Member
     func updateMember(_ member: FamilyMember) {
         manager.membersDictionary[member.name] = member
-        manager.linkFamilyRelations()
-        manager.assignLevels()
+        manager.isDirty = true
+        // manager.linkFamilyRelations()
+        // manager.assignLevels()
     }
     // MARK: - Remove Member
     func removeMember(named name: String) {
         manager.membersDictionary.removeValue(forKey: name)
-        manager.linkFamilyRelations()
-        manager.assignLevels()
+        manager.isDirty = true
+        // manager.linkFamilyRelations()
+        // manager.assignLevels()
         // Adjust navigation state
         if memberNames.isEmpty {
             currentMemberIndex = 0
