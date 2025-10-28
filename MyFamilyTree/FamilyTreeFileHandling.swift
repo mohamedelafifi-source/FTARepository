@@ -118,7 +118,6 @@ struct FileHandlingView: View {
             isPresented: $isImporting,
             allowedContentTypes: [.json]
         ) { result in
-            print("DEBUG FileHandlingView fileImporter presented, action:", String(describing: importAction), "time:", Date())
             guard let action = self.importAction else { return }
             switch action {
             case .load:
@@ -132,7 +131,6 @@ struct FileHandlingView: View {
             Button("OK", role: .cancel) { }
         }
         .onAppear {
-            print("DEBUG FileHandlingView onAppear, command:", String(describing: command), "time:", Date())
             guard let command else { return }
             DispatchQueue.main.async {
                 switch command {
@@ -145,11 +143,9 @@ struct FileHandlingView: View {
                     isImporting = true
                 case .importLoad:
                     if let url = preselectedURL {
-                        print("DEBUG FH will try preselectedURL:", url)
                         // Load immediately without showing a picker
                         processImportedFile(.success(url), isAppending: false)
                     } else {
-                        print("DEBUG FH no preselectedURL; skipping load")
                         // No preselected URL; do nothing (ContentView should provide it)
                         break
                     }
@@ -157,7 +153,6 @@ struct FileHandlingView: View {
             }
         }
         .onDisappear {
-            print("DEBUG FileHandlingView onDisappear time:", Date())
         }
     }
     
@@ -166,6 +161,8 @@ struct FileHandlingView: View {
     private func handleExportResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(_):
+            manager.isDirty = false
+            manager.focusedMemberId = nil
             alertMessage = "Successfully saved "
             showingAlert = true
         case .failure(let error):
@@ -177,7 +174,6 @@ struct FileHandlingView: View {
     private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
         switch result {
         case .success(let url):
-            print("DEBUG FH processing URL:", url)
             
             let started = url.startAccessingSecurityScopedResource()
             guard started else {
@@ -194,44 +190,54 @@ struct FileHandlingView: View {
                 let data = try Data(contentsOf: url)
                 let decoder = JSONDecoder()
                 let importedMembers = try decoder.decode([FamilyMember].self, from: data)
-                print("DEBUG FH decoded members count:", importedMembers.count)
-                print("DEBUG FH starting dictionary update, appending:", isAppending)
                 let count = importedMembers.count
                 
                 DispatchQueue.main.async {
                     if isAppending {
+                        // Build a temporary id-keyed map from current dictionary to merge by stable id
+                        var currentByID: [UUID: FamilyMember] = [:]
+                        for existing in manager.membersDictionary.values {
+                            currentByID[existing.id] = existing
+                        }
+                        // Merge imported members by id
                         for member in importedMembers {
-                            if var existingMember = manager.membersDictionary[member.name] {
-                                existingMember.parents.append(contentsOf: member.parents.filter { !existingMember.parents.contains($0) })
-                                existingMember.spouses.append(contentsOf: member.spouses.filter { !existingMember.spouses.contains($0) })
-                                existingMember.children.append(contentsOf: member.children.filter { !existingMember.children.contains($0) })
-                                existingMember.siblings.append(contentsOf: member.siblings.filter { !existingMember.siblings.contains($0) })
-                                manager.membersDictionary[member.name] = existingMember
+                            if var existing = currentByID[member.id] {
+                                // Merge relationships by names (current schema), deduping entries
+                                existing.parents = Array(Set(existing.parents).union(member.parents)).sorted()
+                                existing.spouses = Array(Set(existing.spouses).union(member.spouses)).sorted()
+                                existing.children = Array(Set(existing.children).union(member.children)).sorted()
+                                existing.siblings = Array(Set(existing.siblings).union(member.siblings)).sorted()
+                                // Prefer the imported name if it differs (or keep existing.name if you prefer)
+                                existing.name = member.name
+                                currentByID[member.id] = existing
                             } else {
-                                manager.membersDictionary[member.name] = member
+                                currentByID[member.id] = member
                             }
+                        }
+                        // Rebuild name-keyed dictionary from id-keyed map
+                        manager.membersDictionary.removeAll()
+                        for m in currentByID.values {
+                            manager.membersDictionary[m.name] = m
                         }
                         alertMessage = "Successfully appended \(count) member(s)."
                     } else {
+                        // Load: replace entirely, but deduplicate by id first
+                        var byID: [UUID: FamilyMember] = [:]
+                        for m in importedMembers {
+                            byID[m.id] = m // last one wins for same id
+                        }
                         manager.membersDictionary.removeAll()
-                        for member in importedMembers {
-                            manager.membersDictionary[member.name] = member
+                        for m in byID.values {
+                            manager.membersDictionary[m.name] = m
                         }
                         alertMessage = "Successfully loaded \(count) member(s)."
                     }
-                    print("DEBUG FH dictionary update done. Count now:", manager.membersDictionary.count)
-                    print("DEBUG FH calling linkFamilyRelations")
-                    manager.linkFamilyRelations()
-                    print("DEBUG FH linkFamilyRelations done")
-                    print("DEBUG FH calling assignLevels")
-                    manager.assignLevels()
-                    print("DEBUG FH assignLevels done")
-                    print("DEBUG FH will show alert:", alertMessage)
+                    manager.isDirty = false
+                    manager.focusedMemberId = nil
                     showingAlert = true
                 }
                 
             } catch {
-                print("DEBUG FH decode error:", error)
                 alertMessage = "Error processing file: \(error.localizedDescription)"
                 showingAlert = true
             }

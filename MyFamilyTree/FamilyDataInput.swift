@@ -105,6 +105,7 @@ struct FamilyDataInputView: View {
                         .disabled(currentMemberIndex >= memberNames.count - 1)
                         Spacer()
                         //ADD PERSON (now Update)
+                        //--------------------------
                         Button(msg6) {
                             let inputName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !inputName.isEmpty else { return }
@@ -233,9 +234,9 @@ struct FamilyDataInputView: View {
             }
         }
     }
-    ////HELPER FUCNTIONS
-    ///////===============
-    ///////MARK :Clear all data whether bulk or individual
+    //HELPER FUCNTIONS
+    //===============
+    //MARK :Clear all data whether bulk or individual
     func clearAllData() {
         manager.membersDictionary.removeAll()
         manager.isDirty = true
@@ -257,6 +258,7 @@ struct FamilyDataInputView: View {
     func updateMember(_ member: FamilyMember) {
         manager.membersDictionary[member.name] = member
         manager.isDirty = true
+        //We deal with the original data without creating relationships
         // manager.linkFamilyRelations()
         // manager.assignLevels()
     }
@@ -264,6 +266,7 @@ struct FamilyDataInputView: View {
     func removeMember(named name: String) {
         manager.membersDictionary.removeValue(forKey: name)
         manager.isDirty = true
+        //We deal with the original data without creating relationships
         // manager.linkFamilyRelations()
         // manager.assignLevels()
         // Adjust navigation state
@@ -321,8 +324,9 @@ struct FamilyDataInputView: View {
         }
         
     }
-
+    //==========================
     // MARK: - Parse Bulk Input
+    //==========================
     static func parseBulkInput(_ input: String, manager: FamilyDataManager = .shared) {
         for rawLine in input.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -325,9 +325,15 @@ class FamilyDataManager: ObservableObject {
         do {
             let decoder = JSONDecoder()
             let decodedArray = try decoder.decode([FamilyMember].self, from: data)
-            // Rebuild dictionary keyed by name
-            var newDict: [String: FamilyMember] = [:]
+            // Rebuild dictionary keyed by name, but first deduplicate by stable id
+            var byID: [UUID: FamilyMember] = [:]
             for member in decodedArray {
+                // If the same id appears multiple times, prefer the last occurrence
+                byID[member.id] = member
+            }
+            // Now build the name-keyed dictionary from the id-deduplicated set
+            var newDict: [String: FamilyMember] = [:]
+            for member in byID.values {
                 newDict[member.name] = member
             }
             membersDictionary = newDict
@@ -652,5 +658,81 @@ class FamilyDataManager: ObservableObject {
             }
         }
     }
-}
+    
+    // MARK: - One-time cleanup: collapse duplicates by UUID and remap relationships
+    func cleanupDuplicatesByID() {
+        // Build groups by UUID
+        let groupsByID = Dictionary(grouping: membersDictionary.values, by: { $0.id })
 
+        // Choose a winner per id and create a mapping from oldName -> winnerName
+        var winnerByID: [UUID: FamilyMember] = [:]
+        var nameRemap: [String: String] = [:]
+
+        for (id, group) in groupsByID {
+            guard let winner = group.last else { continue } // prefer last occurrence
+            winnerByID[id] = winner
+            // Map every name in the group to winner.name
+            for m in group { nameRemap[m.name] = winner.name }
+        }
+
+        // Rebuild membersDictionary keyed by the winner's name only once per id
+        var newDict: [String: FamilyMember] = [:]
+        for winner in winnerByID.values {
+            newDict[winner.name] = winner
+        }
+
+        // Remap all relationship arrays from old names to canonical winner names
+        func remap(_ names: [String]) -> [String] {
+            // Replace names using nameRemap if present, otherwise keep as-is
+            let mapped = names.map { nameRemap[$0] ?? $0 }
+            // Deduplicate and sort for stability
+            return Array(Set(mapped)).sorted()
+        }
+
+        // Apply remapping to each member
+        for (name, var member) in newDict {
+            member.parents = remap(member.parents)
+            member.spouses = remap(member.spouses)
+            member.children = remap(member.children)
+            member.siblings = remap(member.siblings).filter { $0 != member.name }
+            newDict[name] = member
+        }
+
+        // Replace live dictionary
+        membersDictionary = newDict
+
+        // Normalize and recompute levels for consistency
+        linkFamilyRelations()
+        assignLevels()
+
+        // Mark as dirty so user can save cleaned state if desired
+        isDirty = true
+    }
+
+    // MARK: - Rename member safely (preserve UUID, remap references)
+    func renameMember(oldName: String, to newName: String, updatedMember: FamilyMember) {
+        // 1) Remove old key and insert new key with provided updated member
+        membersDictionary.removeValue(forKey: oldName)
+        membersDictionary[newName] = updatedMember
+
+        // 2) Remap references in all other members' relationship arrays
+        func remap(_ arr: [String]) -> [String] {
+            let mapped = arr.map { $0 == oldName ? newName : $0 }
+            return Array(Set(mapped)).sorted()
+        }
+        for (key, var member) in membersDictionary {
+            // Skip self; arrays are name-based and should not include self anyway, but safe to remap across all
+            member.parents = remap(member.parents)
+            member.spouses = remap(member.spouses)
+            member.children = remap(member.children)
+            member.siblings = remap(member.siblings).filter { $0 != member.name }
+            membersDictionary[key] = member
+        }
+
+        // 3) Normalize links and levels for consistency
+        linkFamilyRelations()
+        assignLevels()
+
+        isDirty = true
+    }
+}

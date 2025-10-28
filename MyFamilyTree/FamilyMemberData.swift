@@ -46,13 +46,14 @@ struct FamilyMember: Identifiable, Codable, Equatable, Hashable {
         self.level = level
     }
 
-    // Equality is defined by unique `name`
+    // Equality is defined by stable `id`
     static func == (lhs: FamilyMember, rhs: FamilyMember) -> Bool {
-        return lhs.name == rhs.name
+        return lhs.id == rhs.id
     }
 
-    // Hashing matches equality (based on `name`)
+    // Hashing matches equality (based on `id`)
     func hash(into hasher: inout Hasher) {
-        hasher.combine(name)
+        hasher.combine(id)
     }
 }
+
