@@ -1,8 +1,8 @@
 //
-//  FamilyTreeView.swift
-//  MyFamilyTree
+//  FamilyTreeView.swift
+//  MyFamilyTree
 //
-//  Created by Mohamed El Afifi on 9/30/25.
+//  Created by Mohamed El Afifi on 9/30/25.
 //
 
 
@@ -26,33 +26,47 @@ struct SpouseConnectorOverlay: View {
     let buttonWidth: CGFloat
     let buttonHeight: CGFloat
     
+    // Define how much the line should extend past the button edge
+    // I increased the extension from 10 to 20
+    let extensionAmount: CGFloat = 20
+    
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 ForEach(members, id: \.id) { member in
-                    ForEach(member.spouses, id: \.self) { spouseName in
+                    // Ensure we only draw the line once per spouse pair
+                    let sortedSpouses = member.spouses.filter { $0 > member.name }
+                    
+                    ForEach(sortedSpouses, id: \.self) { spouseName in
                         if let memberAnchor = anchors[member.name],
                            let spouseAnchor = anchors[spouseName] {
                             
                             let memberPoint = proxy[memberAnchor]
                             let spousePoint = proxy[spouseAnchor]
                             
-                            // Adjust the y-coordinate to a point above the bottom of the button
+                            // Anchor is .center, so we move down half the height minus a small offset
                             let yOffset: CGFloat = buttonHeight / 2 - 5
                             
-                            // Calculate the start and end points at the edges of the buttons
-                            let startPoint = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
-                            let endPoint = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
+                            // Calculate the initial start and end points at the edges of the buttons (always left-to-right)
+                            let (initialStartPoint, initialEndPoint) = {
+                                if memberPoint.x < spousePoint.x {
+                                    // Member is on the left
+                                    let start = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
+                                    let end = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
+                                    return (start, end)
+                                } else {
+                                    // Spouse is on the left
+                                    let start = CGPoint(x: spousePoint.x + buttonWidth / 2, y: spousePoint.y + yOffset)
+                                    let end = CGPoint(x: memberPoint.x - buttonWidth / 2, y: memberPoint.y + yOffset)
+                                    return (start, end)
+                                }
+                            }()
                             
-                            // Shorten the horizontal line by 20%
-                            let totalDistance = endPoint.x - startPoint.x
-                            let shortenedDistance = totalDistance * 0.8 // Now 80% of the original length
+                            // **FIX:** Extend the line on both the start and end sides
+                            let shortenedStartPoint = CGPoint(x: initialStartPoint.x - extensionAmount, y: initialStartPoint.y)
+                            let shortenedEndPoint = CGPoint(x: initialEndPoint.x + extensionAmount, y: initialEndPoint.y)
                             
-                            // Corrected and simplified points for the line
-                            let shortenedStartPoint = CGPoint(x: startPoint.x + (totalDistance - shortenedDistance) / 2, y: startPoint.y)
-                            let shortenedEndPoint = CGPoint(x: endPoint.x - (totalDistance - shortenedDistance) / 2, y: endPoint.y)
-                            
-                            // Create a slight curve between the points for a better visual
+                            // Create a slight curve (optional, but maintained for visual style)
                             let controlPoint1 = CGPoint(x: shortenedStartPoint.x + (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedStartPoint.y)
                             let controlPoint2 = CGPoint(x: shortenedStartPoint.x + 2 * (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedEndPoint.y)
                             
@@ -74,12 +88,13 @@ struct SpouseConnectorOverlay: View {
 struct FamilyTreeView: View {
     @ObservedObject var manager = FamilyDataManager.shared
     
-    @State private var anchorMap: [String: Anchor<CGPoint>] = [:]
-    
-    // Add a state variable to hold the calculated button size
-    @State private var buttonSize: CGSize = .zero
-    
+    // State variables
+    @State private var positionAnchors: [String: Anchor<CGPoint>] = [:]
+    @State private var memberButtonSize: CGSize = .zero
     @State private var derivedDict: [String: FamilyMember] = [:]
+    
+    // NEW STATE: To force a final view update after collecting preferences.
+    @State private var shouldShowOverlay = false
     
     private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
         var visited = Set<String>()
@@ -159,104 +174,113 @@ struct FamilyTreeView: View {
     
     var body: some View {
         ZStack {
-            VStack {
-                if let focusedMemberId = manager.focusedMemberId,
-                   let focusedMember = manager.members.first(where: { $0.id == focusedMemberId }) {
-                    Text("Focused: \(focusedMember.name)")
-                        .font(.headline)
-                        .padding(.top)
-                        .padding(.bottom, 5)
-                }
-                
-                HStack {
-                    Button("Refresh Tree") {
-                        derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+            // Conditional rendering based on shouldShowOverlay
+            if shouldShowOverlay || positionAnchors.isEmpty {
+                VStack {
+                    if let focusedMemberId = manager.focusedMemberId,
+                        let focusedMember = manager.members.first(where: { $0.id == focusedMemberId }) {
+                        Text("Focused: \(focusedMember.name)")
+                            .font(.headline)
+                            .padding(.top)
+                            .padding(.bottom, 5)
                     }
-                    .buttonStyle(.bordered)
-
-                    if manager.focusedMemberId != nil {
-                        Button("Show Full Tree") {
-                            manager.focusedMemberId = nil
-                            // Also refresh derived view when switching scope
+                    
+                    HStack {
+                        Button("Refresh Tree") {
                             derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
                         }
                         .buttonStyle(.bordered)
+
+                        if manager.focusedMemberId != nil {
+                            Button("Show Full Tree") {
+                                manager.focusedMemberId = nil
+                                derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                }
-                .padding()
-                
-                if manager.isDirty {
-                    Text("You have unsaved changes. Use File > Save to persist your authored data.")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal)
-                }
-                
-                ScrollView(.vertical) {
-                    VStack(spacing: 40) {
-                        ForEach(grouped, id: \.level) { group in
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 20) {
-                                    ForEach(group.members, id: \.id) { member in
-                                        let isFocused = member.id == manager.focusedMemberId
-                                        
-                                        Text(member.name)
-                                            .padding()
-                                            .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
-                                            .cornerRadius(8)
-                                            .onTapGesture {
-                                                manager.focusedMemberId = member.id
-                                            }
-                                            .anchorPreference(key: MemberPositionKey.self, value: .center) {
-                                                [member.name: $0]
-                                            }
+                    .padding()
+                    
+                    if manager.isDirty {
+                        Text("You have unsaved changes. Use File > Save to persist your authored data.")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal)
+                    }
+                    
+                    ScrollView(.vertical) {
+                        VStack(spacing: 40) {
+                            ForEach(grouped, id: \.level) { group in
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 20) {
+                                        ForEach(group.members, id: \.id) { member in
+                                            let isFocused = member.id == manager.focusedMemberId
+                                            
+                                            Text(member.name)
+                                                .padding()
+                                                .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
+                                                .cornerRadius(8)
+                                                .background(
+                                                    // Robust size and position collection
+                                                    GeometryReader { proxy in
+                                                        Color.clear
+                                                            .onAppear {
+                                                                // Only measure the size once
+                                                                if memberButtonSize == .zero {
+                                                                    memberButtonSize = proxy.size
+                                                                }
+                                                            }
+                                                            .anchorPreference(key: MemberPositionKey.self, value: .center) {
+                                                                [member.name: $0]
+                                                            }
+                                                    }
+                                                )
+                                                .onTapGesture {
+                                                    manager.focusedMemberId = member.id
+                                                }
+                                        }
                                     }
+                                    .padding(.horizontal)
                                 }
-                                .padding(.horizontal)
+                            }
+                        }
+                        .padding(.vertical)
+                        // Explicitly trigger a re-render after anchors are collected
+                        .onPreferenceChange(MemberPositionKey.self) { value in
+                            positionAnchors = value
+                            
+                            // This ensures the view re-renders with the collected anchors on the next frame
+                            DispatchQueue.main.async {
+                                shouldShowOverlay = true
                             }
                         }
                     }
-                    .padding(.vertical)
-                    .onPreferenceChange(MemberPositionKey.self) { value in
-                        anchorMap = value
-                    }
+                }
+                
+                let visibleNames = grouped.flatMap { $0.members.map { $0.name } }
+                let visibleMembers = derivedDict.values.filter { visibleNames.contains($0.name) }
+                
+                // Render the overlay only when size and positions are ready and the trigger has fired
+                if shouldShowOverlay && !positionAnchors.isEmpty && memberButtonSize != .zero {
+                    SpouseConnectorOverlay(
+                        anchors: positionAnchors,
+                        members: visibleMembers,
+                        buttonWidth: memberButtonSize.width,
+                        buttonHeight: memberButtonSize.height
+                    )
+                    .allowsHitTesting(false)
                 }
             }
-            
-            // Hidden view to measure the button size
-            Text("Sample")
-                .padding()
-                .background(Color.clear)
-                .cornerRadius(8)
-                .overlay(
-                    GeometryReader { proxy in
-                        Color.clear.onAppear {
-                            buttonSize = proxy.size
-                        }
-                    }
-                )
-                .opacity(0) // Hide the view
-            
-            let visibleNames = grouped.flatMap { $0.members.map { $0.name } }
-            let visibleMembers = derivedDict.values.filter { visibleNames.contains($0.name) }
-            
-            
-            if !anchorMap.isEmpty && buttonSize != .zero {
-                SpouseConnectorOverlay(
-                    anchors: anchorMap,
-                    members: visibleMembers,
-                    buttonWidth: buttonSize.width,
-                    buttonHeight: buttonSize.height
-                )
-                
-                /*.allowsHitTesting(false) is a SwiftUI view modifier that disables hit testing for the view and all of its subviews. In other words, the view will ignore all touch/tap/gesture interactions and let those interactions “pass through” to views underneath it in the z-order.
-                 */
-                .allowsHitTesting(false)
-            }
-            
-            
         }
-        .onAppear { derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true) }
+        .onAppear {
+            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+        }
+        .onChange(of: manager.focusedMemberId) { _ in
+            // Reset state to force a clean re-measurement cycle and hide the overlay initially
+            memberButtonSize = .zero
+            positionAnchors = [:]
+            shouldShowOverlay = false // Hide the overlay until new anchors are ready
+            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+        }
     }
 }
-
