@@ -20,5 +20,51 @@
             landmarkType = "0">
          </BreakpointContent>
       </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "8B62930C-B3D1-472E-AECD-80E5F754D970"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "MyFamilyTree/DocumentPicker.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "40"
+            endingLineNumber = "40"
+            landmarkName = "Coordinator"
+            landmarkType = "3">
+            <Locations>
+               <Location
+                  uuid = "8B62930C-B3D1-472E-AECD-80E5F754D970 - 6e7b22c63561d3ba"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "MyFamilyTree.DocumentPicker.Coordinator.__allocating_init(MyFamilyTree.DocumentPicker) -&gt; MyFamilyTree.DocumentPicker.Coordinator"
+                  moduleName = "MyFamilyTree.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Applications/MyFamilyTree/MyFamilyTree/MyFamilyTree/DocumentPicker.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "8B62930C-B3D1-472E-AECD-80E5F754D970 - a8be0153825a650b"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "MyFamilyTree.DocumentPicker.Coordinator.init(MyFamilyTree.DocumentPicker) -&gt; MyFamilyTree.DocumentPicker.Coordinator"
+                  moduleName = "MyFamilyTree.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Applications/MyFamilyTree/MyFamilyTree/MyFamilyTree/DocumentPicker.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "41"
+                  endingLineNumber = "41">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
    </Breakpoints>
 </Bucket>

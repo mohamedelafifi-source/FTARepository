@@ -28,6 +28,9 @@ struct FamilyDataInputView: View {
     @State private var originalEditingName: String? = nil
     
     @State private var originalMemberSnapshot: FamilyMember? = nil
+    
+    // Folder selection states removed
+    
     private var hasExplicitChanges: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let currentParents = parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
@@ -186,6 +189,8 @@ struct FamilyDataInputView: View {
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Spacer()
                     }
+                    // Removed folder selection HStack
+                    
                     Text(isCreatingNew ? "Creating new person" : "Editing existing person")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -232,7 +237,9 @@ struct FamilyDataInputView: View {
                 displayCurrentMember()
                 isCreatingNew = false
             }
+            // Removed folder bookmark restore block
         }
+        // Removed fileImporter modifier
     }
     //HELPER FUCNTIONS
     //===============
@@ -280,7 +287,7 @@ struct FamilyDataInputView: View {
             displayCurrentMember()
         }
     }
-                            
+                        
     // MARK: - Get Member
     func getMember(named name: String) -> FamilyMember? {
         manager.membersDictionary[name]
