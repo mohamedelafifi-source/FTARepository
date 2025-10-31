@@ -245,7 +245,11 @@ struct ContentView: View {
                     showAlert = true
                     return
                 }
+                // Set command and present the File Handling screen to trigger the importer
                 pendingFileHandlingCommand = .importAppend
+                if !showFileHandling {
+                    showFileHandling = true
+                }
             }
             .disabled(globals.selectedFolderURL == nil)
             Button("Load from a Tree File") {
@@ -619,4 +623,3 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
-
