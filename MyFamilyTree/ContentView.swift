@@ -381,7 +381,8 @@ struct ContentView: View {
                         .padding()
                 }
             }
-            .sheet(isPresented: $showFamilyTree) {
+            // To revert to sheet: replace fullScreenCover with sheet and restore presentationDetents if desired.
+            .fullScreenCover(isPresented: $showFamilyTree) {
                 NavigationStack {
                     FamilyTreeView()
                         .navigationTitle("Family Tree")
@@ -391,11 +392,6 @@ struct ContentView: View {
                             }
                         }
                 }
-                .ignoresSafeArea(edges: [.bottom])
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-                .presentationBackgroundInteraction(.enabled)
-                .presentationContentInteraction(.scrolls)
             }
             .fullScreenCover(isPresented: $showFileHandling) {
                 NavigationStack {
