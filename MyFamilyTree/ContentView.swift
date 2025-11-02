@@ -57,6 +57,7 @@ struct ContentView: View {
     @State private var showIndividualEntry = false
     @State private var showFamilyTree = false
     @State private var showFileHandling = false
+    @State private var treeDetent: PresentationDetent = .large
     
     @State private var originalMembers: [String: FamilyMember] = [:]
     
@@ -217,6 +218,7 @@ struct ContentView: View {
             photosToolbarMenu
         }
     }
+    //===================
     //FILE HANDLING MENU
     //===================
     private var fileHandlingMenu: some View {
@@ -389,6 +391,11 @@ struct ContentView: View {
                             }
                         }
                 }
+                .ignoresSafeArea(edges: [.bottom])
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationBackgroundInteraction(.enabled)
+                .presentationContentInteraction(.scrolls)
             }
             .fullScreenCover(isPresented: $showFileHandling) {
                 NavigationStack {
@@ -623,3 +630,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+
