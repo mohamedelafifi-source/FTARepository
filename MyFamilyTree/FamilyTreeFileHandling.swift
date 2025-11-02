@@ -158,6 +158,33 @@ struct FileHandlingView: View {
     
     // MARK: - Helper Functions
     
+    // Ensures an iCloud file is locally available before reading. Returns true if available.
+    private func ensureLocalFile(at url: URL, timeout: TimeInterval = 20) async -> Bool {
+        do {
+            let values = try url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
+            let isUbiquitous = values.isUbiquitousItem ?? false
+            let status = values.ubiquitousItemDownloadingStatus
+            // If not iCloud, or already current, we're good
+            if !isUbiquitous { return true }
+            if status == URLUbiquitousItemDownloadingStatus.current { return true }
+
+            // Kick off download if needed
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+
+            let start = Date()
+            while Date().timeIntervalSince(start) < timeout {
+                try await Task.sleep(nanoseconds: 250_000_000) // 0.25s
+                let v = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+                let stat = v.ubiquitousItemDownloadingStatus
+                if stat == URLUbiquitousItemDownloadingStatus.current { return true }
+            }
+            return false
+        } catch {
+            print("DEBUG ensureLocalFile: error querying resource values:", error.localizedDescription)
+            return false
+        }
+    }
+    
     private func handleExportResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(_):
@@ -174,7 +201,6 @@ struct FileHandlingView: View {
     private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
         switch result {
         case .success(let url):
-            
             let started = url.startAccessingSecurityScopedResource()
             guard started else {
                 alertMessage = "Access to the selected file was denied."
@@ -182,65 +208,63 @@ struct FileHandlingView: View {
                 return
             }
             
+            // Ensure the file is local if it's an iCloud item
+            Task {
+                let available = await ensureLocalFile(at: url, timeout: 30)
+                if !available {
+                    alertMessage = "The selected file is not available offline yet. Please try again after it finishes downloading."
+                    showingAlert = true
+                    return
+                }
+
+                do {
+                    let data = try await Task.detached(priority: .utility) { () -> Data in
+                        return try Data(contentsOf: url)
+                    }.value
+                    let decoder = JSONDecoder()
+                    let importedMembers = try decoder.decode([FamilyMember].self, from: data)
+                    let count = importedMembers.count
+
+                    DispatchQueue.main.async {
+                        if isAppending {
+                            var currentByID: [UUID: FamilyMember] = [:]
+                            for existing in manager.membersDictionary.values { currentByID[existing.id] = existing }
+                            for member in importedMembers {
+                                if var existing = currentByID[member.id] {
+                                    existing.parents = Array(Set(existing.parents).union(member.parents)).sorted()
+                                    existing.spouses = Array(Set(existing.spouses).union(member.spouses)).sorted()
+                                    existing.children = Array(Set(existing.children).union(member.children)).sorted()
+                                    existing.siblings = Array(Set(existing.siblings).union(member.siblings)).sorted()
+                                    existing.name = member.name
+                                    currentByID[member.id] = existing
+                                } else {
+                                    currentByID[member.id] = member
+                                }
+                            }
+                            manager.membersDictionary.removeAll()
+                            for m in currentByID.values { manager.membersDictionary[m.name] = m }
+                            alertMessage = "Successfully appended \(count) member(s)."
+                        } else {
+                            var byID: [UUID: FamilyMember] = [:]
+                            for m in importedMembers { byID[m.id] = m }
+                            manager.membersDictionary.removeAll()
+                            for m in byID.values { manager.membersDictionary[m.name] = m }
+                            alertMessage = "Successfully loaded \(count) member(s)."
+                        }
+                        manager.isDirty = false
+                        manager.focusedMemberId = nil
+                        showingAlert = true
+                    }
+                } catch {
+                    print("DEBUG processImportedFile: ERROR", error.localizedDescription)
+                    alertMessage = "Error processing file: \(error.localizedDescription)"
+                    showingAlert = true
+                }
+            }
             defer {
                 url.stopAccessingSecurityScopedResource()
             }
-            
-            do {
-                let data = try Data(contentsOf: url)
-                let decoder = JSONDecoder()
-                let importedMembers = try decoder.decode([FamilyMember].self, from: data)
-                let count = importedMembers.count
-                
-                DispatchQueue.main.async {
-                    if isAppending {
-                        // Build a temporary id-keyed map from current dictionary to merge by stable id
-                        var currentByID: [UUID: FamilyMember] = [:]
-                        for existing in manager.membersDictionary.values {
-                            currentByID[existing.id] = existing
-                        }
-                        // Merge imported members by id
-                        for member in importedMembers {
-                            if var existing = currentByID[member.id] {
-                                // Merge relationships by names (current schema), deduping entries
-                                existing.parents = Array(Set(existing.parents).union(member.parents)).sorted()
-                                existing.spouses = Array(Set(existing.spouses).union(member.spouses)).sorted()
-                                existing.children = Array(Set(existing.children).union(member.children)).sorted()
-                                existing.siblings = Array(Set(existing.siblings).union(member.siblings)).sorted()
-                                // Prefer the imported name if it differs (or keep existing.name if you prefer)
-                                existing.name = member.name
-                                currentByID[member.id] = existing
-                            } else {
-                                currentByID[member.id] = member
-                            }
-                        }
-                        // Rebuild name-keyed dictionary from id-keyed map
-                        manager.membersDictionary.removeAll()
-                        for m in currentByID.values {
-                            manager.membersDictionary[m.name] = m
-                        }
-                        alertMessage = "Successfully appended \(count) member(s)."
-                    } else {
-                        // Load: replace entirely, but deduplicate by id first
-                        var byID: [UUID: FamilyMember] = [:]
-                        for m in importedMembers {
-                            byID[m.id] = m // last one wins for same id
-                        }
-                        manager.membersDictionary.removeAll()
-                        for m in byID.values {
-                            manager.membersDictionary[m.name] = m
-                        }
-                        alertMessage = "Successfully loaded \(count) member(s)."
-                    }
-                    manager.isDirty = false
-                    manager.focusedMemberId = nil
-                    showingAlert = true
-                }
-                
-            } catch {
-                alertMessage = "Error processing file: \(error.localizedDescription)"
-                showingAlert = true
-            }
+            return
             
         case .failure(let error):
             alertMessage = "Error selecting file: \(error.localizedDescription)"
@@ -248,4 +272,5 @@ struct FileHandlingView: View {
         }
     }
 }
+
 

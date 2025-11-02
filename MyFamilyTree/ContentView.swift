@@ -85,6 +85,8 @@ struct ContentView: View {
     
     // Added state for system file importer for JSON tree file loading
     @State private var showJSONFileImporter = false
+    @State private var showJSONChooser = false
+    @State private var showJSONAppendChooser = false
     
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
@@ -247,24 +249,20 @@ struct ContentView: View {
                     showAlert = true
                     return
                 }
-                // Set command and present the File Handling screen to trigger the importer
-                pendingFileHandlingCommand = .importAppend
-                if !showFileHandling {
-                    showFileHandling = true
-                }
+                // Present the JSON chooser for append
+                guard !showJSONAppendChooser && !showFileHandling else { return }
+                showJSONAppendChooser = true
             }
             .disabled(globals.selectedFolderURL == nil)
             Button("Load from a Tree File") {
-                print("DEBUG Load button tapped, importer:", showJSONFileImporter, "fileHandling:", showFileHandling, "time:", Date())
                 if globals.selectedFolderURL == nil {
                     alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
                     showAlert = true
                     return
                 }
-                // Guard against re-entry while importer or file handling is active
-                guard !showJSONFileImporter && !showFileHandling else { return }
-                // Use system file importer to choose any JSON file to load
-                showJSONFileImporter = true
+                // Guard against re-entry while chooser or file handling is active
+                guard !showJSONChooser && !showFileHandling else { return }
+                showJSONChooser = true
             }
             .disabled(globals.selectedFolderURL == nil)
         } label: { Text("File Handling") }
@@ -348,14 +346,85 @@ struct ContentView: View {
                     .navigationTitle("Select Folder")
                 }
             }
-            // Temporarily disabled JSON picker sheet to avoid interference with Load flow
-            .background(
-                Group {
-                    if false {
-                        EmptyView()
+            .sheet(isPresented: $showJSONChooser) {
+                NavigationStack {
+                    JSONFileChooserView(
+                        onPickJSON: { url in
+                            // Dismiss chooser immediately
+                            showJSONChooser = false
+
+                            // Update selected URL immediately
+                            globals.selectedJSONURL = url
+
+                            // Present FileHandling right away after the sheet is gone
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                pendingFileHandlingCommand = .importLoad
+                                if !showFileHandling {
+                                    showFileHandling = true
+                                }
+                            }
+
+                            // Compute preview in the background independently; do not block the hand-off
+                            Task.detached(priority: .utility) {
+                                if let data = try? Data(contentsOf: url),
+                                   let preview = String(data: data, encoding: .utf8) {
+                                    let clipped = String(preview.prefix(2000))
+                                    await MainActor.run {
+                                        globals.openedJSONPreview = clipped
+                                    }
+                                } else {
+                                    await MainActor.run {
+                                        globals.openedJSONPreview = "Preview unavailable (file may still be downloading or unreadable)."
+                                    }
+                                }
+                            }
+                        },
+                        onCancel: {
+                            showJSONChooser = false
+                        }
+                    )
+                    .navigationTitle("Choose Tree JSON")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showJSONChooser = false }
+                        }
                     }
                 }
-            )
+            }
+            .sheet(isPresented: $showJSONAppendChooser) {
+                NavigationStack {
+                    JSONFileChooserView(
+                        onPickJSON: { url in
+                            // Dismiss and proceed to FileHandling with append
+                            showJSONAppendChooser = false
+                            globals.selectedJSONURL = url
+                            // Present FileHandling after the sheet is gone
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                pendingFileHandlingCommand = .importAppend
+                                if !showFileHandling { showFileHandling = true }
+                            }
+                            // Optional: compute a preview asynchronously
+                            Task.detached(priority: .utility) {
+                                if let data = try? Data(contentsOf: url),
+                                   let preview = String(data: data, encoding: .utf8) {
+                                    await MainActor.run {
+                                        globals.openedJSONPreview = String(preview.prefix(2000))
+                                    }
+                                }
+                            }
+                        },
+                        onCancel: {
+                            showJSONAppendChooser = false
+                        }
+                    )
+                    .navigationTitle("Choose Tree JSON to Append")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showJSONAppendChooser = false }
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showGallery) {
                 if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
                     if #available(iOS 16.0, *) {
@@ -573,7 +642,6 @@ struct ContentView: View {
             allowedContentTypes: [.json],
             allowsMultipleSelection: false
         ) { result in
-            print("DEBUG importer result:", result, "time:", Date())
             switch result {
             case .success(let urls):
                 guard !showFileHandling else { return } // already presenting
@@ -603,13 +671,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: showJSONFileImporter) { old, new in
-            print("DEBUG showJSONFileImporter:", old, "->", new, "time:", Date())
         }
         .onChange(of: showFileHandling) { old, new in
-            print("DEBUG showFileHandling:", old, "->", new, "time:", Date())
         }
         .onChange(of: pendingFileHandlingCommand) { old, new in
-            print("DEBUG pendingFileHandlingCommand:", String(describing: old), "->", String(describing: new), "time:", Date())
         }
         .toolbar { mainToolbar }
 
