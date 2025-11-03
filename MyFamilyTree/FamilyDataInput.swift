@@ -33,19 +33,23 @@ struct FamilyDataInputView: View {
     
     private var hasExplicitChanges: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let currentParents = parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
-        let currentSpouses = spouses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
-        let currentChildren = children.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.sorted()
-        // Siblings are treated as potentially inferred; do not enable Update based solely on siblings changes
+        let currentParents = parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.sorted()
+        let currentSpouses = spouses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.sorted()
+        let currentChildren = children.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.sorted()
+        let currentSiblings = siblings.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.sorted()
+
+        // Create mode: enable Update if ANY field is non-empty
         guard let snap = originalMemberSnapshot else {
-            // In create mode, require non-empty name and at least one explicit field change (name is enough)
-            return !trimmedName.isEmpty
+            return !trimmedName.isEmpty || !currentParents.isEmpty || !currentSpouses.isEmpty || !currentChildren.isEmpty || !currentSiblings.isEmpty
         }
-        let nameChanged = trimmedName != snap.name
-        let parentsChanged = currentParents != snap.parents.sorted()
-        let spousesChanged = currentSpouses != snap.spouses.sorted()
-        let childrenChanged = currentChildren != snap.children.sorted()
-        return nameChanged || parentsChanged || spousesChanged || childrenChanged
+
+        // Edit mode: enable Update if ANY field changed (including siblings)
+        let nameChanged = trimmedName != snap.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parentsChanged = currentParents != snap.parents.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.sorted()
+        let spousesChanged = currentSpouses != snap.spouses.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.sorted()
+        let childrenChanged = currentChildren != snap.children.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.sorted()
+        let siblingsChanged = currentSiblings != snap.siblings.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.sorted()
+        return nameChanged || parentsChanged || spousesChanged || childrenChanged || siblingsChanged
     }
     
     var memberNames: [String] {
@@ -68,10 +72,15 @@ struct FamilyDataInputView: View {
             Form {
                 Section(header: Text(msg5)) {
                     TextField("Name", text: $name)
+                        .onSubmit { name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
                     TextField("Parents (comma separated)", text: $parents)
+                        .onSubmit { parents = parents.trimmingCharacters(in: .whitespacesAndNewlines) }
                     TextField("Spouses (comma separated)", text: $spouses)
+                        .onSubmit { spouses = spouses.trimmingCharacters(in: .whitespacesAndNewlines) }
                     TextField("Children (comma separated)", text: $children)
+                        .onSubmit { children = children.trimmingCharacters(in: .whitespacesAndNewlines) }
                     TextField("Siblings (comma separated)", text: $siblings)
+                        .onSubmit { siblings = siblings.trimmingCharacters(in: .whitespacesAndNewlines) }
 
                     HStack {
                         Spacer()
@@ -110,18 +119,25 @@ struct FamilyDataInputView: View {
                         //ADD PERSON (now Update)
                         //--------------------------
                         Button(msg6) {
+                            // Normalize inputs (auto-trim and clean lists)
                             let inputName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !inputName.isEmpty else { return }
+                            guard !inputName.isEmpty || !parents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !spouses.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !children.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !siblings.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
                             let finalName = inputName
+
+                            let normParents = parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                            let normSpouses = spouses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                            let normChildren = children.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                            let normSiblings = siblings.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 
                             let newMember = FamilyMember(
                                 name: finalName,
                                 gender: nil,
                                 imageName: "",
-                                parents: parents.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
-                                spouses: spouses.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
-                                children: children.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
-                                siblings: siblings.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
+                                parents: normParents,
+                                spouses: normSpouses,
+                                children: normChildren,
+                                siblings: normSiblings,
                                 isImplicit: false,
                                 level: 0
                             )
@@ -169,7 +185,7 @@ struct FamilyDataInputView: View {
                             }
                         }
                         .buttonStyle(.bordered)
-                        .disabled(!hasExplicitChanges || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!hasExplicitChanges)
                         Spacer()
                         //---------------------
                         //DELETE MEMBER
@@ -222,7 +238,7 @@ struct FamilyDataInputView: View {
         .alert("Duplicate name", isPresented: $showDuplicateAlert) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("A member with this name already exists. Please choose a different name or edit the existing member.")
+            Text("This name already exists. Choose a different name or edit the existing member.")
         }
         .padding()
         .onAppear {
