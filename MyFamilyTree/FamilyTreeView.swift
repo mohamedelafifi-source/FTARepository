@@ -203,7 +203,8 @@ struct FamilyTreeView: View {
                     
                     if manager.isDirty {
                         Text("You have unsaved changes. Use File > Save")
-                            .font(.footnote)
+                            //.font(.footnote)
+                            .font(.headline)
                             .foregroundStyle(.red)
                             .padding(.horizontal)
                     }

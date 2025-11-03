@@ -554,7 +554,8 @@ struct ContentView: View {
             switch result {
             case .success(let url):
                 let folder = url.deletingLastPathComponent()
-                let folderDisplay = folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+                GlobalVariables.shared.selectedFolderURL = folder
+                if url.pathExtension.lowercased() == "json" { GlobalVariables.shared.selectedJSONURL = url }
                 //No Need to show the path
                 //successMessage = "Saved to \(folderDisplay)/\(url.lastPathComponent)"
                 successMessage = "Saved "
