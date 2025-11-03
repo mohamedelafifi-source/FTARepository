@@ -41,7 +41,8 @@ struct BulkEditorSheet: View {
             .alert("Parse Bulk Data?", isPresented: $showConfirmation) {
                 Button("Parse", role: .destructive) {
                     FamilyDataInputView.parseBulkInput(bulkText)
-                    successMessage = "Bulk data parsed."
+                    let count = FamilyDataManager.shared.membersDictionary.count
+                    successMessage = "Successfully parsed \(count) member(s)."
                     showSuccess = true
                     bulkText = ""
                 }

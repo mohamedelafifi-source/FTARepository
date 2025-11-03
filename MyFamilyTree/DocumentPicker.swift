@@ -99,6 +99,8 @@ struct JSONFileChooserView: View {
                         results.append(fileURL)
                     }
                 }
+                // Exclude the photo index file from the list
+                results = results.filter { $0.lastPathComponent.lowercased() != "photo-index.json" }
                 // Sort by name for stable display
                 results.sort { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
                 self.jsonFiles = results
@@ -165,3 +167,4 @@ struct DocumentPicker: UIViewControllerRepresentable {
         }
     }
 }
+

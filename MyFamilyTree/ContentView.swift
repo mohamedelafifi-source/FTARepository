@@ -679,7 +679,7 @@ struct ContentView: View {
         }
         .toolbar { mainToolbar }
 
-        attachSheets(to: base)
+        attachSheets(to: base.opacity(showFileHandling ? 0 : 1))
     }
 
     var body: some View {
