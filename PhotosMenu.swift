@@ -16,6 +16,8 @@ struct PhotosMenu: View {
     @Binding var showSuccess: Bool
     @Binding var successMessage: String
 
+    @Binding var showResetConfirm: Bool
+
     private func readIndexNames(from indexURL: URL) throws -> Set<String> {
         let data = try Data(contentsOf: indexURL)
         if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -29,34 +31,7 @@ struct PhotosMenu: View {
     }
 
     var body: some View {
-        Menu {
-            Button("Create Photo Index in Folder") {
-                guard let folder = globals.selectedFolderURL else {
-                    alertMessage = "Please select a storage folder first."
-                    showAlert = true
-                    return
-                }
-                do {
-                    let indexURL = folder.appendingPathComponent("photo-index.json")
-                    if FileManager.default.fileExists(atPath: indexURL.path) {
-                        throw CocoaError(.fileWriteFileExists)
-                    }
-                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                    globals.selectedJSONURL = url
-                    successMessage = "Photo index created at “\(url.lastPathComponent)”."
-                    showSuccess = true
-                } catch {
-                    let nsErr = error as NSError
-                    if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSFileWriteFileExistsError {
-                        alertMessage = "A photo index already exists in the selected folder."
-                    } else {
-                        alertMessage = error.localizedDescription
-                    }
-                    showAlert = true
-                }
-            }
-            .disabled(globals.selectedFolderURL == nil)
-            Divider()
+        Group {
             Button("Import a Photo …") {
                 guard globals.selectedFolderURL != nil else {
                     alertMessage = "Select a storage folder first."
@@ -72,6 +47,7 @@ struct PhotosMenu: View {
                     do {
                         let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
                         globals.selectedJSONURL = url
+                        print("[PhotosMenu] selectedJSONURL set to:", url.path)
                     } catch {
                         alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
                         showAlert = true
@@ -98,6 +74,7 @@ struct PhotosMenu: View {
                 do {
                     let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
                     globals.selectedJSONURL = url
+                    print("[PhotosMenu] selectedJSONURL set to:", url.path)
                 } catch {
                     alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
                     showAlert = true
@@ -124,13 +101,10 @@ struct PhotosMenu: View {
                 }
 
                 do {
-                    print("[PhotosMenu] About to readIndexNames at:", idxURL.path)
                     let indexNames = try readIndexNames(from: idxURL)
-                    print("[PhotosMenu] indexNames.count =", indexNames.count)
                     let visible = Set(filteredNamesForPhotos)
-                    print("[PhotosMenu] visible.count =", visible.count)
                     let intersection = visible.intersection(indexNames)
-                    print("[PhotosMenu] intersection.count =", intersection.count)
+                    print("[PhotosMenu] Browse Tree: visible=\(visible.count) inIndex=\(indexNames.count) intersection=\(intersection.count)")
                     if indexNames.isEmpty {
                         /* Do not show all the names
                         alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
@@ -147,12 +121,9 @@ struct PhotosMenu: View {
                         showAlert = true
                         return
                     }
-                    print("[PhotosMenu] About to loadPhotoIndex from:", idxURL.path)
                     let allEntries = try StorageManager.shared.loadPhotoIndex(from: idxURL)
-                    print("[PhotosMenu] allEntries.count =", allEntries.count)
                     let visibleSet = Set(filteredNamesForPhotos.map { $0.lowercased() })
                     let candidates = allEntries.filter { visibleSet.contains($0.name.lowercased()) }
-                    print("[PhotosMenu] candidates.count =", candidates.count)
                     let anyExisting = candidates.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) }
                     if !anyExisting {
                         alertMessage = "No photos on disk match the names in this tree."
@@ -160,8 +131,7 @@ struct PhotosMenu: View {
                         return
                     }
                 } catch {
-                    print("[PhotosMenu] Caught error while reading index:", error)
-                    alertMessage = "Line 165 in PhotosMenu Failed to read photo index: \(error.localizedDescription)"
+                    alertMessage = "PhotosMenu Failed to read photo index: \(error.localizedDescription)"
                     showAlert = true
                     return
                 }
@@ -171,8 +141,18 @@ struct PhotosMenu: View {
                 }
             }
             .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
-        } label: {
-            Text("Photos")
+
+            Divider()
+            Button(role: .destructive) {
+                guard globals.selectedFolderURL != nil else {
+                    alertMessage = "Please select a storage folder first (Photos menu)."
+                    showAlert = true
+                    return
+                }
+                showResetConfirm = true
+            } label: {
+                Label("Reset Photo Index", systemImage: "arrow.counterclockwise")
+            }
         }
         .font(.footnote)
     }

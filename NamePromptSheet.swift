@@ -34,7 +34,7 @@ struct NamePromptSheet: View {
                 HStack {
                     Button("Cancel", role: .cancel) { isPresented = false }
                     Spacer()
-                    Button("Import") {
+                    Button("Continue") {
                         let trimmed = trimmedInput
                         guard !trimmed.isEmpty, !isDuplicate else { return }
                         onConfirm(trimmed)
@@ -46,17 +46,6 @@ struct NamePromptSheet: View {
             }
             .padding()
             .navigationTitle("Name for Photo")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Import") {
-                        let trimmed = trimmedInput
-                        guard !trimmed.isEmpty, !isDuplicate else { return }
-                        onConfirm(trimmed)
-                        isPresented = false
-                    }
-                    .disabled(trimmedInput.isEmpty || isDuplicate)
-                }
-            }
         }
     }
 }

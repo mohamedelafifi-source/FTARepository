@@ -107,12 +107,18 @@ enum PhotoImportService {
             ext: ext
         )
         
+        let attrs = try? FileManager.default.attributesOfItem(atPath: savedURL.path)
+        let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+        print("[PhotoImportService] Saved image:", savedURL.path, "size=", size)
+        
         // 6) Update index
         try StorageManager.shared.appendToPhotoIndex(
             name: displayName,
             fileName: savedURL.lastPathComponent,
             indexURL: idxURL
         )
+        
+        print("[PhotoImportService] Appended to photo-index.json for:", displayName)
         
         return (displayName, savedURL, idxURL)
     }
@@ -145,7 +151,6 @@ struct PhotoBrowserView: View {
     
     // ========== MODIFICATION 3: Main body is now conditional ==========
     var body: some View {
-        print("[PhotoBrowserView] BODY EVALUATED @\(#fileID):\(#line)")
         return Group {
             
             if let folderURL = resolvedFolderURL, let indexURL = resolvedIndexURL {
@@ -240,7 +245,6 @@ struct PhotoBrowserView: View {
     }
     
     private func resolveAndLoad() {
-        print("[PhotoBrowserView] resolveAndLoad() ENTER @\(#fileID):\(#line)")
         var isStale = false
         do {
             // 1. Resolve the bookmark data to get a "live" URL
@@ -254,8 +258,6 @@ struct PhotoBrowserView: View {
                 return
             }
             
-            print("[PhotoBrowserView] Gained security access for FOLDER.")
-            
             // 3. NOW create the "live" index URL
             let idx = url.appendingPathComponent("photo-index.json")
 
@@ -268,7 +270,7 @@ struct PhotoBrowserView: View {
                 return
             }
             
-            print("[PhotoBrowserView] Gained security access for FILE.")
+            print("[PhotoBrowserView] Access granted for folder and index file")
             
             // 5. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
@@ -342,20 +344,16 @@ struct PhotoBrowserView: View {
     //To read the photo index .JSON File . Where the error happens
     //============================================================
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
-        print("[PhotoBrowserView] loadIndex() starting")
-        print("[PhotoBrowserView] indexURL=\(indexURL.path)")
-        print("[PhotoBrowserView] folderURL=\(folderURL.path)")
-        
         do {
             // First try the canonical loader
             do {
                 let arr = try StorageManager.shared.loadPhotoIndex(from: indexURL)
                 entries = arr.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if hSizeClass == .regular, selected == nil { selected = entries.first }
-                print("[PhotoBrowserView] loaded entries: \(entries.count) (canonical)")
+                print("[PhotoBrowserView] Loaded entries:", entries.count)
                 return
             } catch {
-                print("[PhotoBrowserView] canonical loader threw; using fallback: \(error.localizedDescription)")
+                // fallback follows
             }
 
             // Fallback loader wrapped in async continuation and background queue
@@ -363,12 +361,6 @@ struct PhotoBrowserView: View {
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
                         let data = try Data(contentsOf: indexURL)
-                        print("[PhotoBrowserView] Fallback read: bytes=\(data.count)")
-                        if let s = String(data: data, encoding: .utf8) {
-                            print("[PhotoBrowserView] First 2000 chars:\n\(s.prefix(2000))")
-                        } else {
-                            print("[PhotoBrowserView] Not UTF-8")
-                        }
                         if data.isEmpty {
                             continuation.resume(returning: [])
                             return
@@ -398,11 +390,10 @@ struct PhotoBrowserView: View {
             }
             entries = parsed.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             if hSizeClass == .regular, selected == nil { selected = entries.first }
-            print("[PhotoBrowserView] loaded entries: \(entries.count) (fallback)")
+            print("[PhotoBrowserView] Loaded entries:", entries.count)
             return
             
         } catch {
-            print("[PhotoBrowserView] loadIndex() FAILED @\(#fileID):\(#line): \(error)")
             errorMessage = "[PhotoBrowserView.loadIndex @\(#fileID):\(#line)] Line 406..Failed to read photo index at: \(indexURL.path). The data may be missing or unreadable. Error at 406: \(error.localizedDescription)"
         }
     }
@@ -433,7 +424,6 @@ struct FilteredPhotoBrowserView: View {
     
     // ========== MODIFICATION 3: Main body is now conditional ==========
     var body: some View {
-        print("[FilteredPhotoBrowserView] BODY EVALUATED @\(#fileID):\(#line)")
         return Group {
             if let folderURL = resolvedFolderURL, let indexURL = resolvedIndexURL {
                 // This is the original body, which now only runs *after*
@@ -527,7 +517,6 @@ struct FilteredPhotoBrowserView: View {
     }
     
     private func resolveAndLoad() {
-        print("[FilteredPhotoBrowserView] resolveAndLoad() ENTER @\(#fileID):\(#line)")
         var isStale = false
         do {
             // 1. Resolve the bookmark data to get a "live" URL
@@ -541,8 +530,6 @@ struct FilteredPhotoBrowserView: View {
                 return
             }
             
-            print("[FilteredPhotoBrowserView] Gained security access for FOLDER.")
-            
             // 3. NOW create the "live" index URL
             let idx = url.appendingPathComponent("photo-index.json")
 
@@ -555,7 +542,7 @@ struct FilteredPhotoBrowserView: View {
                 return
             }
             
-            print("[FilteredPhotoBrowserView] Gained security access for FILE.")
+            print("[FilteredPhotoBrowserView] Access granted for folder and index file")
             
             // 5. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
@@ -629,11 +616,6 @@ struct FilteredPhotoBrowserView: View {
     }
     
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
-        print("[FilteredPhotoBrowserView] loadIndex() starting; filters=\(filterNames)")
-        print("[FilteredPhotoBrowserView] indexURL=\(indexURL.path)")
-        print("[FilteredPhotoBrowserView] folderURL=\(folderURL.path)")
-        print("[FilteredPhotoBrowserView] filters count=\(filterNames.count)")
-
         do {
             // First try the canonical loader
             do {
@@ -645,10 +627,10 @@ struct FilteredPhotoBrowserView: View {
                 } else {
                     selected = nil
                 }
-                print("[FilteredPhotoBrowserView] loaded entries: \(entries.count) (canonical)")
+                print("[FilteredPhotoBrowserView] Loaded filtered entries:", entries.count)
                 return
             } catch {
-                print("[FilteredPhotoBrowserView] canonical loader threw; using fallback: \(error.localizedDescription)")
+                // fallback follows
             }
 
             // Fallback loader wrapped in async continuation and background queue
@@ -656,13 +638,6 @@ struct FilteredPhotoBrowserView: View {
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
                         let data = try Data(contentsOf: indexURL)
-                        print("[FilteredPhotoBrowserView] Fallback read: bytes=\(data.count)")
-                        if let s = String(data: data, encoding: .utf8) {
-                            print("[FilteredGPhotoBrowserView] First 2000 chars:\n\(s.prefix(2000))")
-                        } else {
-                            print("[FilteredPhotoBrowserView] Not UTF-8")
-                        }
-                        
                         if data.isEmpty {
                             continuation.resume(returning: [])
                             return
@@ -702,10 +677,9 @@ struct FilteredPhotoBrowserView: View {
             } else {
                 selected = nil
             }
-            print("[FilteredPhotoBrowserView] loaded entries: \(entries.count) (fallback)")
+            print("[FilteredPhotoBrowserView] Loaded filtered entries:", entries.count)
             
         } catch {
-            print("[FilteredPhotoBrowserView] loadIndex() FAILED @\(#fileID):\(#line): \(error)")
             errorMessage = "[FilteredPhotoBrowserView.loadIndex @\(#fileID):\(#line)] AT 709 Failed to read photo index at: \(indexURL.path). Data may be missing or unreadable. Error at 709: \(error.localizedDescription)"
         }
     }

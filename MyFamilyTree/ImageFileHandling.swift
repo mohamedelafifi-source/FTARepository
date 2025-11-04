@@ -291,26 +291,19 @@ extension StorageManager {
 
     func loadPhotoIndex(from indexURL: URL) throws -> [PhotoIndexEntry] {
         let data = try Data(contentsOf: indexURL)
-        print("[StorageManager] loadPhotoIndex: reading", indexURL.path, "bytes=", data.count)
-        if let preview = String(data: data, encoding: .utf8) {
-            print("[StorageManager] loadPhotoIndex: first 500 chars:\n", preview.prefix(500))
-        } else {
-            print("[StorageManager] loadPhotoIndex: data not UTF-8; attempting decode anyway")
-        }
 
         let decoder = JSONDecoder()
 
         // 1) Try strict decoding first
         if let strict = try? decoder.decode([PhotoIndexEntry].self, from: data) {
-            print("[StorageManager] loadPhotoIndex: strict decode OK; entries=", strict.count)
+            print("[StorageManager] loadPhotoIndex: decoded entries=", strict.count)
             return strict
         }
-        print("[StorageManager] loadPhotoIndex: strict decode failed; attempting lossy decode…")
 
         // 2) Lossy decode: skip malformed items instead of throwing
         let lossy = try decoder.decode([Lossy<PhotoIndexEntry>].self, from: data)
         let compact = lossy.compactMap { $0.value }
-        print("[StorageManager] loadPhotoIndex: lossy decode OK; kept entries=", compact.count, "dropped=", max(0, lossy.count - compact.count))
+        print("[StorageManager] loadPhotoIndex: decoded entries=", compact.count)
         return compact
     }
 

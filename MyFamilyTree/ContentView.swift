@@ -94,6 +94,9 @@ struct ContentView: View {
     // Added state to prevent overlapping presentation transitions
     @State private var isPresentingTransition = false
     
+    // Added state for reset photo index confirmation dialog
+    @State private var showResetPhotoIndexConfirm = false
+    
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
         case individual = "Individual"
@@ -421,52 +424,6 @@ struct ContentView: View {
     //===========
     private var photosToolbarMenu: some View {
         Menu {
-            // Reset Photo Index action
-            Button(role: .destructive) {
-                guard let folder = resolveFolderURL(showError: true) else {
-                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
-                    showAlert = true
-                    return
-                }
-                
-                // We must start access to write/delete files
-                guard folder.startAccessingSecurityScopedResource() else {
-                    alertMessage = "Could not get permission to modify the folder."
-                    showAlert = true
-                    return
-                }
-                
-                // Stop access when we are done
-                defer { folder.stopAccessingSecurityScopedResource() }
-                
-                // Attempt to delete existing index and recreate
-                do {
-                    let idx = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                    // Delete if exists
-                    if FileManager.default.fileExists(atPath: idx.path) {
-                        try FileManager.default.removeItem(at: idx)
-                    }
-                    // Recreate empty index
-                    let recreated = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                    // Ensure it contains a valid empty JSON array if newly created or empty
-                    let attrs = try? FileManager.default.attributesOfItem(atPath: recreated.path)
-                    let fileSize = (attrs?[.size] as? NSNumber)?.intValue ?? 0
-                    if fileSize == 0 {
-                        try Data("[]".utf8).write(to: recreated, options: .atomic)
-                    }
-                    // Optional: update any preview/debug state
-                    successMessage = "Photo index reset."
-                    showSuccess = true
-                } catch {
-                    alertMessage = "Failed to reset photo index: \(error.localizedDescription)"
-                    showAlert = true
-                }
-            } label: {
-                Label("Reset Photo Index", systemImage: "arrow.counterclockwise")
-            }
-            Divider()
-
-            // Existing Photos menu content
             PhotosMenu(
                 showGallery: $showGallery,
                 showFilteredPhotos: $showFilteredPhotos,
@@ -477,11 +434,51 @@ struct ContentView: View {
                 alertMessage: $alertMessage,
                 showAlert: $showAlert,
                 showSuccess: $showSuccess,
-                successMessage: $successMessage
+                successMessage: $successMessage,
+                showResetConfirm: $showResetPhotoIndexConfirm
             )
         } label: { Text("Photos") }
         .disabled(!isFolderSelected || isImportingPhoto)
         .font(.footnote)
+        .confirmationDialog(
+            "Reset Photo Index?",
+            isPresented: $showResetPhotoIndexConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete and Recreate", role: .destructive) {
+                guard let folder = resolveFolderURL(showError: true) else {
+                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+                    showAlert = true
+                    return
+                }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Could not get permission to modify the folder."
+                    showAlert = true
+                    return
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+                do {
+                    let idx = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    if FileManager.default.fileExists(atPath: idx.path) {
+                        try FileManager.default.removeItem(at: idx)
+                    }
+                    let recreated = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    let attrs = try? FileManager.default.attributesOfItem(atPath: recreated.path)
+                    let fileSize = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+                    if fileSize == 0 {
+                        try Data("[]".utf8).write(to: recreated, options: .atomic)
+                    }
+                    successMessage = "Photo index reset."
+                    showSuccess = true
+                } catch {
+                    alertMessage = "Failed to reset photo index: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will delete all photo index entries and recreate an empty index. This cannot be undone.")
+        }
     }
     
     // This helper property builds the main view content
@@ -532,9 +529,6 @@ struct ContentView: View {
                 Text(alertMessage)
             }
             .alert("Success", isPresented: $showSuccess) {
-                Button("Copy Path") {
-                    UIPasteboard.general.string = successMessage
-                }
                 Button("OK") { }
             } message: {
                 Text(successMessage)
