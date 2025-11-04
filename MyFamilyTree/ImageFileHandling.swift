@@ -281,10 +281,37 @@ extension StorageManager {
         return url
     }
 
-    /// Load and decode the photo index array.
+    private struct Lossy<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            value = try? container.decode(T.self)
+        }
+    }
+
     func loadPhotoIndex(from indexURL: URL) throws -> [PhotoIndexEntry] {
         let data = try Data(contentsOf: indexURL)
-        return try JSONDecoder().decode([PhotoIndexEntry].self, from: data)
+        print("[StorageManager] loadPhotoIndex: reading", indexURL.path, "bytes=", data.count)
+        if let preview = String(data: data, encoding: .utf8) {
+            print("[StorageManager] loadPhotoIndex: first 500 chars:\n", preview.prefix(500))
+        } else {
+            print("[StorageManager] loadPhotoIndex: data not UTF-8; attempting decode anyway")
+        }
+
+        let decoder = JSONDecoder()
+
+        // 1) Try strict decoding first
+        if let strict = try? decoder.decode([PhotoIndexEntry].self, from: data) {
+            print("[StorageManager] loadPhotoIndex: strict decode OK; entries=", strict.count)
+            return strict
+        }
+        print("[StorageManager] loadPhotoIndex: strict decode failed; attempting lossy decode…")
+
+        // 2) Lossy decode: skip malformed items instead of throwing
+        let lossy = try decoder.decode([Lossy<PhotoIndexEntry>].self, from: data)
+        let compact = lossy.compactMap { $0.value }
+        print("[StorageManager] loadPhotoIndex: lossy decode OK; kept entries=", compact.count, "dropped=", max(0, lossy.count - compact.count))
+        return compact
     }
 
     /// Append one entry and re-save the photo index.

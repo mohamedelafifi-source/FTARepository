@@ -69,18 +69,11 @@ struct PhotosMenu: View {
             .disabled(globals.selectedFolderURL == nil)
             Button("Browse All Photos") {
                 if let folder = globals.selectedFolderURL {
-                    if globals.selectedJSONURL == nil {
-                        do {
-                            let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                            globals.selectedJSONURL = url
-                        } catch {
-                            alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                            showAlert = true
-                            return
-                        }
-                    }
-                    guard globals.selectedJSONURL != nil else {
-                        alertMessage = "Select a storage folder and photo index first."
+                    do {
+                        let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                        globals.selectedJSONURL = url
+                    } catch {
+                        alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
                         showAlert = true
                         return
                     }
@@ -102,15 +95,13 @@ struct PhotosMenu: View {
                     showAlert = true
                     return
                 }
-                if globals.selectedJSONURL == nil {
-                    do {
-                        let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                        globals.selectedJSONURL = url
-                    } catch {
-                        alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                        showAlert = true
-                        return
-                    }
+                do {
+                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    globals.selectedJSONURL = url
+                } catch {
+                    alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
+                    showAlert = true
+                    return
                 }
                 guard let idxURL = globals.selectedJSONURL else {
                     alertMessage = "Select a storage folder and photo index first (Photos menu)."
@@ -133,7 +124,13 @@ struct PhotosMenu: View {
                 }
 
                 do {
+                    print("[PhotosMenu] About to readIndexNames at:", idxURL.path)
                     let indexNames = try readIndexNames(from: idxURL)
+                    print("[PhotosMenu] indexNames.count =", indexNames.count)
+                    let visible = Set(filteredNamesForPhotos)
+                    print("[PhotosMenu] visible.count =", visible.count)
+                    let intersection = visible.intersection(indexNames)
+                    print("[PhotosMenu] intersection.count =", intersection.count)
                     if indexNames.isEmpty {
                         /* Do not show all the names
                         alertMessage = "No photos found in the photo index for folder \"\(folder.lastPathComponent)\".\nUse Photos → Import a Photo to add photos for your tree members, then try again."
@@ -142,8 +139,6 @@ struct PhotosMenu: View {
                         showAlert = true
                         return
                     }
-                    let visible = Set(filteredNamesForPhotos)
-                    let intersection = visible.intersection(indexNames)
                     if intersection.isEmpty {
                         /* DO not show all the names
                         alertMessage = "None of the visible names are present in the photo index.\nNames: \(filteredNamesForPhotos.joined(separator: ", "))"
@@ -152,9 +147,12 @@ struct PhotosMenu: View {
                         showAlert = true
                         return
                     }
+                    print("[PhotosMenu] About to loadPhotoIndex from:", idxURL.path)
                     let allEntries = try StorageManager.shared.loadPhotoIndex(from: idxURL)
+                    print("[PhotosMenu] allEntries.count =", allEntries.count)
                     let visibleSet = Set(filteredNamesForPhotos.map { $0.lowercased() })
                     let candidates = allEntries.filter { visibleSet.contains($0.name.lowercased()) }
+                    print("[PhotosMenu] candidates.count =", candidates.count)
                     let anyExisting = candidates.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) }
                     if !anyExisting {
                         alertMessage = "No photos on disk match the names in this tree."
@@ -162,7 +160,8 @@ struct PhotosMenu: View {
                         return
                     }
                 } catch {
-                    alertMessage = "Failed to read photo index: \(error.localizedDescription)"
+                    print("[PhotosMenu] Caught error while reading index:", error)
+                    alertMessage = "Line 165 in PhotosMenu Failed to read photo index: \(error.localizedDescription)"
                     showAlert = true
                     return
                 }

@@ -18,12 +18,12 @@ import Foundation
 
 struct ContentView: View {
     /*
-    What is @ObservedObject: A SwiftUI property wrapper that lets a view subscribe to an external observable object (an instance of a class that conforms to ObservableObject).
-    • Why it’s used: When any @Published property inside the observed object changes, SwiftUI will re-render the parts of the view that depend on it.
-    • How it works:
+     What is @ObservedObject: A SwiftUI property wrapper that lets a view subscribe to an external observable object (an instance of a class that conforms to ObservableObject).
+     • Why it’s used: When any @Published property inside the observed object changes, SwiftUI will re-render the parts of the view that depend on it.
+     • How it works:
        • Your object class adopts ObservableObject.
        • Properties you want to trigger UI updates are marked with @Published.
-    */
+     */
     @ObservedObject var globals = GlobalVariables.shared
     @ObservedObject private var dataManager = FamilyDataManager.shared
     
@@ -79,6 +79,9 @@ struct ContentView: View {
     // New state variables for filtered photo view
     @State private var showFilteredPhotos = false
     @State private var filteredNamesForPhotos: [String] = []
+    // Prevent overlapping Photo imports/presentations
+    @State private var isImportingPhoto = false
+    
     @State private var isHandlingJSONPick = false
     
     @State private var pendingLoadURL: URL? = nil
@@ -88,23 +91,33 @@ struct ContentView: View {
     @State private var showJSONChooser = false
     @State private var showJSONAppendChooser = false
     
+    // Added state to prevent overlapping presentation transitions
+    @State private var isPresentingTransition = false
+    
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
         case individual = "Individual"
     }
     
+    // ========== MODIFICATION: Use bookmark to check path ==========
     // Display helper for the Location menu path line
     fileprivate var folderPathDisplay: String {
-        if let url = globals.selectedFolderURL {
+        // Try to resolve from bookmark first
+        if let url = resolveFolderURL(showError: false) {
+            return url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        } else if let url = globals.selectedFolderURL {
+             // Fallback to transient URL if bookmark is gone
             return url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         } else {
             return "None selected"
         }
     }
     
+    // ========== MODIFICATION: Use bookmark to check status ==========
     // Simple flag for Location menu state (kept out of the view builder)
     fileprivate var isFolderSelected: Bool {
-        globals.selectedFolderURL != nil
+        // Check if the bookmark data exists
+        UserDefaults.standard.data(forKey: "selectedFolderBookmark") != nil
     }
     
     // Helper to queue an export (handled by onReceive)
@@ -143,6 +156,79 @@ struct ContentView: View {
         return []
     }
     
+    // ========== MODIFICATION: This is the core bookmark logic ==========
+    // This function loads the persistent bookmark data and creates a new
+    // "live" security-scoped URL from it.
+    private func resolveFolderURL(showError: Bool) -> URL? {
+        // 1. Get the saved permission data
+        guard let bookmarkData = UserDefaults.standard.data(forKey: "selectedFolderBookmark") else {
+            if showError {
+                print("[ContentView] No folder permission bookmark found. User must re-select folder.")
+                alertMessage = "No folder selected. Please choose a folder from the 'Location' menu."
+                showAlert = true
+            }
+            return nil
+        }
+        
+        do {
+            var isStale = false
+            // 2. Re-create a NEW, "live" URL from the permission data
+            // For iOS, options must be []
+            let resolvedURL = try URL(resolvingBookmarkData: bookmarkData, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            
+            if isStale {
+                // If the bookmark is stale, we should re-save it.
+                print("[ContentView] Bookmark was stale, attempting to refresh...")
+                // === THE FIX IS HERE: We save a full bookmark, not a minimal one ===
+                let newBookmarkData = try resolvedURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                UserDefaults.standard.set(newBookmarkData, forKey: "selectedFolderBookmark")
+                print("[ContentView] Refreshed stale bookmark.")
+            }
+            
+            // 3. Return the new, "live" URL
+            return resolvedURL
+        } catch {
+            if showError {
+                print("[ContentView] Failed to resolve bookmark: \(error)")
+                alertMessage = "Failed to get folder permission. Please re-select the folder from the 'Location' menu."
+                showAlert = true
+            }
+            return nil
+        }
+    }
+    
+    fileprivate enum PhotoIndexError: LocalizedError {
+        case folderNotSelected
+        case noPermission
+        case ensureFailed(Error)
+        var errorDescription: String? {
+            switch self {
+            case .folderNotSelected:
+                return "No storage folder selected. Please choose a folder from the Location menu."
+            case .noPermission:
+                return "Could not get permission to access the selected folder."
+            case .ensureFailed(let underlying):
+                return "Failed to read or create the photo index: \(underlying.localizedDescription)"
+            }
+        }
+    }
+
+    fileprivate func currentPhotoIndexURL() throws -> URL {
+        guard let folder = resolveFolderURL(showError: true) else {
+            throw PhotoIndexError.folderNotSelected
+        }
+        guard folder.startAccessingSecurityScopedResource() else {
+            throw PhotoIndexError.noPermission
+        }
+        defer { folder.stopAccessingSecurityScopedResource() }
+        do {
+            let idx = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+            return idx
+        } catch {
+            throw PhotoIndexError.ensureFailed(error)
+        }
+    }
+    
     private func prepareExport(for payload: ExportPayload) {
         switch payload {
         case .none:
@@ -165,19 +251,41 @@ struct ContentView: View {
 
     private func handlePickedItem(_ item: PhotosPickerItem) async {
         defer { pickedItem = nil }
-        guard let folder = globals.selectedFolderURL else {
-            alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+        
+        // Get the "live" folder URL
+        guard let folder = resolveFolderURL(showError: true) else {
+            alertMessage = "No storage folder selected. Please choose a folder from the Location menu."
             showAlert = true
             return
         }
+        
+        // Get the "live" index URL with explicit error
+        let index: URL
         do {
+            index = try currentPhotoIndexURL()
+        } catch {
+            alertMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            showAlert = true
+            return
+        }
+        
+        do {
+            // We must start access before calling the import service
+            // NOTE: The import service will ALSO start/stop its own access
+            // but we do it here to be safe.
+            guard folder.startAccessingSecurityScopedResource() else {
+                throw CocoaError(.fileReadNoPermission)
+            }
+            
+            defer { folder.stopAccessingSecurityScopedResource() }
+            
             let result = try await PhotoImportService.importFromPhotos(
                 item: item,
                 folderURL: folder,
-                currentIndexURL: globals.selectedJSONURL,
+                currentIndexURL: index,
                 personName: pendingPhotoName
             )
-            globals.selectedJSONURL = result.indexURL
+            // Keep photo index separate; do not overwrite tree JSON URL here.
             successMessage = "Imported"
             showSuccess = true
         } catch {
@@ -244,27 +352,33 @@ struct ContentView: View {
             }
             .disabled(dataManager.membersDictionary.isEmpty)
             Button("Append from a Tree File") {
-                if globals.selectedFolderURL == nil {
+                if !isFolderSelected {
                     alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
                     showAlert = true
                     return
                 }
+                // Prevent overlapping presentations
+                guard !isPresentingTransition else { return }
+                isPresentingTransition = true
                 // Present the JSON chooser for append
                 guard !showJSONAppendChooser && !showFileHandling else { return }
                 showJSONAppendChooser = true
             }
-            .disabled(globals.selectedFolderURL == nil)
+            .disabled(!isFolderSelected)
             Button("Load from a Tree File") {
-                if globals.selectedFolderURL == nil {
+                if !isFolderSelected {
                     alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
                     showAlert = true
                     return
                 }
+                // Prevent overlapping presentations
+                guard !isPresentingTransition else { return }
+                isPresentingTransition = true
                 // Guard against re-entry while chooser or file handling is active
                 guard !showJSONChooser && !showFileHandling else { return }
                 showJSONChooser = true
             }
-            .disabled(globals.selectedFolderURL == nil)
+            .disabled(!isFolderSelected)
         } label: { Text("File Handling") }
         .font(.footnote)
     }
@@ -306,385 +420,469 @@ struct ContentView: View {
     // PHOTO MENU
     //===========
     private var photosToolbarMenu: some View {
-        PhotosMenu(
-            showGallery: $showGallery,
-            showFilteredPhotos: $showFilteredPhotos,
-            showPhotoImporter: $showPhotoImporter,
-            showNamePrompt: $showNamePrompt,
-            tempNameInput: $tempNameInput,
-            filteredNamesForPhotos: $filteredNamesForPhotos,
-            alertMessage: $alertMessage,
-            showAlert: $showAlert,
-            showSuccess: $showSuccess,
-            successMessage: $successMessage
-        )
-        .disabled(globals.selectedFolderURL == nil)
+        Menu {
+            // Reset Photo Index action
+            Button(role: .destructive) {
+                guard let folder = resolveFolderURL(showError: true) else {
+                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
+                    showAlert = true
+                    return
+                }
+                
+                // We must start access to write/delete files
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Could not get permission to modify the folder."
+                    showAlert = true
+                    return
+                }
+                
+                // Stop access when we are done
+                defer { folder.stopAccessingSecurityScopedResource() }
+                
+                // Attempt to delete existing index and recreate
+                do {
+                    let idx = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    // Delete if exists
+                    if FileManager.default.fileExists(atPath: idx.path) {
+                        try FileManager.default.removeItem(at: idx)
+                    }
+                    // Recreate empty index
+                    let recreated = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    // Ensure it contains a valid empty JSON array if newly created or empty
+                    let attrs = try? FileManager.default.attributesOfItem(atPath: recreated.path)
+                    let fileSize = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+                    if fileSize == 0 {
+                        try Data("[]".utf8).write(to: recreated, options: .atomic)
+                    }
+                    // Optional: update any preview/debug state
+                    successMessage = "Photo index reset."
+                    showSuccess = true
+                } catch {
+                    alertMessage = "Failed to reset photo index: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            } label: {
+                Label("Reset Photo Index", systemImage: "arrow.counterclockwise")
+            }
+            Divider()
+
+            // Existing Photos menu content
+            PhotosMenu(
+                showGallery: $showGallery,
+                showFilteredPhotos: $showFilteredPhotos,
+                showPhotoImporter: $showPhotoImporter,
+                showNamePrompt: $showNamePrompt,
+                tempNameInput: $tempNameInput,
+                filteredNamesForPhotos: $filteredNamesForPhotos,
+                alertMessage: $alertMessage,
+                showAlert: $showAlert,
+                showSuccess: $showSuccess,
+                successMessage: $successMessage
+            )
+        } label: { Text("Photos") }
+        .disabled(!isFolderSelected || isImportingPhoto)
+        .font(.footnote)
     }
     
-    private func attachSheets<V: View>(to view: V) -> some View {
-        view
-            .sheet(isPresented: $showFolderPicker) {
-                NavigationStack {
-                    FolderPickerView { url in
-                        //SET THE GLOBAL FOLDER LOCATION HERE. IT SHOULD BE SET GLOBALLY
-                        if url.startAccessingSecurityScopedResource() {
-                            globals.selectedFolderURL = url
-                            // Ensure a photo index exists and set selectedJSONURL so File Handling works immediately
-                            do {
-                                let idx = try StorageManager.shared.ensurePhotoIndex(in: url, fileName: "photo-index.json")
-                                globals.selectedJSONURL = idx
-                            } catch {
-                                // Non-blocking: log or show a soft alert if desired
-                            }
-                            showFolderPicker = false
-                        } else {
-                            alertMessage = "Couldn’t access the selected folder. Please try a different location."
-                            showAlert = true
-                            showFolderPicker = false
-                        }
-                    }
-                    .navigationTitle("Select Folder")
-                }
-            }
-            .sheet(isPresented: $showJSONChooser) {
-                NavigationStack {
-                    JSONFileChooserView(
-                        onPickJSON: { url in
-                            // Dismiss chooser immediately
-                            showJSONChooser = false
-
-                            // Update selected URL immediately
-                            globals.selectedJSONURL = url
-
-                            // Present FileHandling right away after the sheet is gone
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                pendingFileHandlingCommand = .importLoad
-                                if !showFileHandling {
-                                    showFileHandling = true
-                                }
-                            }
-
-                            // Compute preview in the background independently; do not block the hand-off
-                            Task.detached(priority: .utility) {
-                                if let data = try? Data(contentsOf: url),
-                                   let preview = String(data: data, encoding: .utf8) {
-                                    let clipped = String(preview.prefix(2000))
-                                    await MainActor.run {
-                                        globals.openedJSONPreview = clipped
-                                    }
-                                } else {
-                                    await MainActor.run {
-                                        globals.openedJSONPreview = "Preview unavailable (file may still be downloading or unreadable)."
-                                    }
-                                }
-                            }
-                        },
-                        onCancel: {
-                            showJSONChooser = false
-                        }
-                    )
-                    .navigationTitle("Choose Tree JSON")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showJSONChooser = false }
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showJSONAppendChooser) {
-                NavigationStack {
-                    JSONFileChooserView(
-                        onPickJSON: { url in
-                            // Dismiss and proceed to FileHandling with append
-                            showJSONAppendChooser = false
-                            globals.selectedJSONURL = url
-                            // Present FileHandling after the sheet is gone
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                pendingFileHandlingCommand = .importAppend
-                                if !showFileHandling { showFileHandling = true }
-                            }
-                            // Optional: compute a preview asynchronously
-                            Task.detached(priority: .utility) {
-                                if let data = try? Data(contentsOf: url),
-                                   let preview = String(data: data, encoding: .utf8) {
-                                    await MainActor.run {
-                                        globals.openedJSONPreview = String(preview.prefix(2000))
-                                    }
-                                }
-                            }
-                        },
-                        onCancel: {
-                            showJSONAppendChooser = false
-                        }
-                    )
-                    .navigationTitle("Choose Tree JSON to Append")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showJSONAppendChooser = false }
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showGallery) {
-                if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
-                    if #available(iOS 16.0, *) {
-                        PhotoBrowserView(folderURL: folder, indexURL: idx)
-                    } else {
-                        Text("Requires iOS 16.0 or later.")
-                            .padding()
-                    }
-                } else {
-                    ImagesListView()
-                }
-            }
-            .sheet(isPresented: $showFilteredPhotos) {
-                if let folder = globals.selectedFolderURL, let idx = globals.selectedJSONURL {
-                    if #available(iOS 16.0, *) {
-                        FilteredPhotoBrowserView(folderURL: folder, indexURL: idx, filterNames: filteredNamesForPhotos)
-                    } else {
-                        Text("Requires iOS 16.0 or later.")
-                            .padding()
-                    }
-                } else {
-                    Text("Select a storage folder and photo index first.")
-                        .padding()
-                }
-            }
-            // To revert to sheet: replace fullScreenCover with sheet and restore presentationDetents if desired.
-            .fullScreenCover(isPresented: $showFamilyTree) {
-                NavigationStack {
-                    FamilyTreeView()
-                        .navigationTitle("Family Tree")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { showFamilyTree = false }
-                            }
-                        }
-                }
-            }
-            .fullScreenCover(isPresented: $showFileHandling) {
-                NavigationStack {
-                    if let cmd = pendingFileHandlingCommand {
-                        FileHandlingView(command: cmd, preselectedURL: globals.selectedJSONURL)
-                            .navigationTitle("File Handling")
-                            .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    Button("Done") {
-                                        showFileHandling = false
-                                        pendingFileHandlingCommand = nil
-                                    }
-                                }
-                            }
-                    } else {
-                        // Fallback if presentation occurs before command is ready
-                        Text("Preparing…")
-                            .onAppear {
-                                // print removed
-                            }
-                            .navigationTitle("File Handling")
-                            .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    Button("Done") { showFileHandling = false }
-                                }
-                            }
-                    }
-                }
-            }
-            .sheet(isPresented: $showIndividualEntry) {
-                NavigationStack {
-                    FamilyDataInputView()
-                        .navigationTitle("Enter/Edit By Member")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { showIndividualEntry = false }
-                            }
-                        }
-                }
-            }
-            .sheet(isPresented: $showBulkEditor) {
-                BulkEditorSheet(
-                    isPresented: $showBulkEditor,
-                    bulkText: $bulkText,
-                    showConfirmation: $showConfirmation,
-                    showSuccess: $showSuccess,
-                    successMessage: $successMessage
-                )
-            }
-            .sheet(isPresented: $showNamePrompt) {
-                NamePromptSheet(
-                    isPresented: $showNamePrompt,
-                    tempNameInput: $tempNameInput,
-                    onConfirm: { name in
-                        pendingPhotoName = name
-                        showPhotoImporter = true
-                    },
-                    existingNames: {
-                        if let idx = globals.selectedJSONURL, let names = try? readIndexNames(from: idx) {
-                            return names
-                        } else {
-                            return []
-                        }
-                    }()
-                )
-            }
-    }
-    
-    /*
-     What is @ViewBuilder: A special attribute used by SwiftUI to allow multiple child views to be returned from a function or closure, while still appearing like a single expression.
-     • Why it’s used: It lets you write “if/else” and multiple views inline without manually wrapping them in containers or arrays.
-     • How it works:
-        • The compiler translates multiple child expressions into a single composed view using the ViewBuilder rules.
-        • You can use control flow (if, switch) to conditionally include views.
-        • It’s used in SwiftUI APIs like body, VStack content closures, and custom view-returning functions.
-     */
+    // This helper property builds the main view content
     @ViewBuilder
-    private var contentHost: some View {
-        let base = VStack(spacing: 16) {
+    private var mainViewHierarchy: some View {
+        VStack(spacing: 16) {
             Text("Welcome to Family Tree")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
-        .photosPicker(isPresented: $showPhotoImporter, selection: $pickedItem, matching: .images)
-        .fileExporter(
-            isPresented: showExporterBinding,
-            document: exportDoc,
-            contentType: exportType,
-            defaultFilename: exportName
-        ) { result in
-            switch result {
-            case .success(let url):
-                let folder = url.deletingLastPathComponent()
-                GlobalVariables.shared.selectedFolderURL = folder
-                if url.pathExtension.lowercased() == "json" { GlobalVariables.shared.selectedJSONURL = url }
-                //No Need to show the path
-                //successMessage = "Saved to \(folderDisplay)/\(url.lastPathComponent)"
-                successMessage = "Saved "
-                showSuccess = true
-            case .failure(let error):
-                let nsErr = error as NSError
-                if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
-                    break
+        .toolbar { mainToolbar }
+        .opacity(showFileHandling ? 0 : 1)
+    }
+    
+    @ViewBuilder
+    private var contentHost: some View {
+        mainViewHierarchy // Call the main view
+            .photosPicker(isPresented: $showPhotoImporter, selection: $pickedItem, matching: .images)
+            .fileExporter(
+                isPresented: showExporterBinding,
+                document: exportDoc,
+                contentType: exportType,
+                defaultFilename: exportName
+            ) { result in
+                switch result {
+                case .success(let url):
+                    let folder = url.deletingLastPathComponent()
+                    // Don't auto-save this folder, user must pick it
+                    // GlobalVariables.shared.selectedFolderURL = folder
+                    if url.pathExtension.lowercased() == "json" { GlobalVariables.shared.selectedJSONURL = url }
+                    successMessage = "Saved "
+                    showSuccess = true
+                case .failure(let error):
+                    let nsErr = error as NSError
+                    if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
+                        break
+                    }
+                    alertMessage = error.localizedDescription
+                    showAlert = true
                 }
-                alertMessage = error.localizedDescription
-                showAlert = true
-            }
-            globals.exportPayload = .none
-            globals.showExporter = false
-            exportingNow = false
-        }
-        .alert("Error", isPresented: $showAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(alertMessage)
-        }
-        .alert("Success", isPresented: $showSuccess) {
-            Button("Copy Path") {
-                UIPasteboard.general.string = successMessage
-            }
-            Button("OK") { }
-        } message: {
-            Text(successMessage)
-        }
-        .alert("Clear all in-memory family data?", isPresented: $showDataEntryClearAlert) {
-            Button("Clear", role: .destructive) {
-                dataManager.membersDictionary.removeAll()
-                dataManager.focusedMemberId = nil
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This removes all parsed data from memory. It does not affect files on disk.")
-        }
-        .onChange(of: globals.showExporter) { oldValue, newValue in
-            if newValue == false {
                 globals.exportPayload = .none
+                globals.showExporter = false
                 exportingNow = false
             }
-        }
-        .onReceive(globals.$exportPayload) { newValue in
-            switch newValue {
-            case .none:
-                break
-            default:
-                prepareExport(for: newValue)
-                guard !exportingNow else { return }
-                exportingNow = true
-                DispatchQueue.main.async { globals.showExporter = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    if GlobalVariables.shared.showExporter == false && exportingNow {
-                        exportingNow = false
-                    }
+            .alert("Error", isPresented: $showAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(alertMessage)
+            }
+            .alert("Success", isPresented: $showSuccess) {
+                Button("Copy Path") {
+                    UIPasteboard.general.string = successMessage
+                }
+                Button("OK") { }
+            } message: {
+                Text(successMessage)
+            }
+            .alert("Clear all in-memory family data?", isPresented: $showDataEntryClearAlert) {
+                Button("Clear", role: .destructive) {
+                    dataManager.membersDictionary.removeAll()
+                    dataManager.focusedMemberId = nil
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This removes all parsed data from memory. It does not affect files on disk.")
+            }
+            .onChange(of: globals.showExporter) { oldValue, newValue in
+                if newValue == false {
+                    globals.exportPayload = .none
+                    exportingNow = false
                 }
             }
-        }
-        .onChange(of: pickedItem) { _, newItem in
-            guard let item = newItem else { return }
-            Task { await handlePickedItem(item) }
-        }
-        /*
-        Removed automatic presentation of FileHandlingView on pendingFileHandlingCommand change:
-        .onChange(of: pendingFileHandlingCommand) { _, newValue in
-            if newValue != nil {
-                // print removed
-                showFileHandling = true
-            }
-        }
-        */
-        .onChange(of: showJSONPicker) { oldValue, newValue in
-            // When the JSON picker is dismissed and we have a URL, proceed to load
-            if oldValue == true && newValue == false, let url = pendingLoadURL {
-                globals.selectedJSONURL = url
-                pendingFileHandlingCommand = .importLoad
-                showFileHandling = true
-                pendingLoadURL = nil
-            }
-        }
-        .fileImporter(
-            isPresented: $showJSONFileImporter,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard !showFileHandling else { return } // already presenting
-                if let url = urls.first {
-                    if globals.selectedJSONURL != url {
-                        globals.selectedJSONURL = url
-                        do {
-                            let data = try Data(contentsOf: url)
-                            let preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
-                            globals.openedJSONPreview = String(preview.prefix(2000))
-                        } catch {
-                            globals.openedJSONPreview = "Failed to read JSON: \(error.localizedDescription)"
+            .onReceive(globals.$exportPayload) { newValue in
+                switch newValue {
+                case .none:
+                    break
+                default:
+                    prepareExport(for: newValue)
+                    guard !exportingNow else { return }
+                    exportingNow = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { globals.showExporter = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        if GlobalVariables.shared.showExporter == false && exportingNow {
+                            exportingNow = false
                         }
                     }
+                }
+            }
+            .onChange(of: pickedItem) { _, newItem in
+                guard let item = newItem, !isImportingPhoto else { return }
+                isImportingPhoto = true
+                Task {
+                    await handlePickedItem(item)
+                    await MainActor.run { isImportingPhoto = false }
+                }
+            }
+            .onChange(of: showJSONPicker) { oldValue, newValue in
+                if oldValue == true && newValue == false, let url = pendingLoadURL {
+                    globals.selectedJSONURL = url
                     pendingFileHandlingCommand = .importLoad
-                    if !showFileHandling {
-                        showFileHandling = true
+                    showFileHandling = true
+                    pendingLoadURL = nil
+                }
+            }
+            // Modified fileImporter handler: offload JSON preview reading to background task to mitigate main-thread stalls
+            .fileImporter(
+                isPresented: $showJSONFileImporter,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard !showFileHandling else { return } // already presenting
+                    if let url = urls.first {
+                        if globals.selectedJSONURL != url {
+                            globals.selectedJSONURL = url
+                            Task.detached(priority: .utility) {
+                                let preview: String
+                                do {
+                                    let data = try Data(contentsOf: url)
+                                    preview = String(data: data, encoding: .utf8) ?? "«binary JSON?»"
+                                } catch {
+                                    preview = "Failed to read JSON: \(error.localizedDescription)"
+                                }
+                                await MainActor.run {
+                                    globals.openedJSONPreview = String(preview.prefix(2000))
+                                }
+                            }
+                        }
+                        pendingFileHandlingCommand = .importLoad
+                        if !showFileHandling {
+                            showFileHandling = true
+                        }
+                        // Ensure importer is off to prevent re-presentation
+                        showJSONFileImporter = false
                     }
-                    // Ensure importer is off to prevent re-presentation
+                case .failure(let error):
+                    alertMessage = error.localizedDescription
+                    showAlert = true
+                    // Ensure importer is off in case of failure
                     showJSONFileImporter = false
                 }
-            case .failure(let error):
-                alertMessage = error.localizedDescription
-                showAlert = true
-                // Ensure importer is off in case of failure
-                showJSONFileImporter = false
             }
-        }
-        .onChange(of: showJSONFileImporter) { old, new in
-        }
-        .onChange(of: showFileHandling) { old, new in
-        }
-        .onChange(of: pendingFileHandlingCommand) { old, new in
-        }
-        .toolbar { mainToolbar }
-
-        attachSheets(to: base.opacity(showFileHandling ? 0 : 1))
+            .onChange(of: showJSONFileImporter) { old, new in
+            }
+            .onChange(of: showFileHandling) { old, new in
+            }
+            .onChange(of: pendingFileHandlingCommand) { old, new in
+            }
     }
 
     var body: some View {
         NavigationStack {
             contentHost
+                // === ALL SHEETS AND COVERS MOVED HERE ===
+                .sheet(isPresented: $showFolderPicker) {
+                    NavigationStack {
+                        FolderPickerView { url in
+                            // We must start access to get the bookmark
+                            guard url.startAccessingSecurityScopedResource() else {
+                                alertMessage = "Couldn’t access the selected folder. Please try a different location."
+                                showAlert = true
+                                showFolderPicker = false
+                                return
+                            }
+                            
+                            // Defer stopping access
+                            defer {
+                                url.stopAccessingSecurityScopedResource()
+                                print("[ContentView] Stopped security access after getting bookmark.")
+                            }
+                            
+                            do {
+                                // 1. Get the bookmark data (the permission)
+                                // ========== THIS IS THE FIX: Use [] (full bookmark) instead of .minimalBookmark ==========
+                                let bookmarkData = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                                
+                                // 2. Save this data persistently
+                                UserDefaults.standard.set(bookmarkData, forKey: "selectedFolderBookmark")
+                                print("[ContentView] Saved FULL folder permission bookmark.")
+                                
+                                // 3. Set this for immediate use by other functions
+                                globals.selectedFolderURL = url
+                                
+                                // 4. Ensure a photo index exists
+                                do {
+                                    _ = try StorageManager.shared.ensurePhotoIndex(in: url, fileName: "photo-index.json")
+                                } catch {
+                                    // Non-blocking
+                                }
+
+                            } catch {
+                                alertMessage = "Failed to save folder permission: \(error.localizedDescription)"
+                                showAlert = true
+                                print("[ContentView] Failed to save bookmark: \(error)")
+                            }
+                            showFolderPicker = false
+                        }
+                        .navigationTitle("Select Folder")
+                    }
+                }
+                .sheet(isPresented: $showJSONChooser) {
+                    NavigationStack {
+                        JSONFileChooserView(
+                            onPickJSON: { url in
+                                showJSONChooser = false
+                                globals.selectedJSONURL = url
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    pendingFileHandlingCommand = .importLoad
+                                    if !showFileHandling {
+                                        showFileHandling = true
+                                    }
+                                }
+                                Task.detached(priority: .utility) {
+                                    if let data = try? Data(contentsOf: url),
+                                       let preview = String(data: data, encoding: .utf8) {
+                                        let clipped = String(preview.prefix(2000))
+                                        await MainActor.run {
+                                            globals.openedJSONPreview = clipped
+                                        }
+                                    } else {
+                                        await MainActor.run {
+                                            globals.openedJSONPreview = "Preview unavailable (file may still be downloading or unreadable)."
+                                        }
+                                    }
+                                }
+                            },
+                            onCancel: {
+                                showJSONChooser = false
+                            }
+                        )
+                        .onDisappear { isPresentingTransition = false }
+                        .navigationTitle("Choose Tree JSON")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showJSONChooser = false }
+                            }
+                        }
+                    }
+                }
+                .sheet(isPresented: $showJSONAppendChooser) {
+                    NavigationStack {
+                        JSONFileChooserView(
+                            onPickJSON: { url in
+                                showJSONAppendChooser = false
+                                globals.selectedJSONURL = url
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    pendingFileHandlingCommand = .importAppend
+                                    if !showFileHandling { showFileHandling = true }
+                                }
+                                Task.detached(priority: .utility) {
+                                    if let data = try? Data(contentsOf: url),
+                                       let preview = String(data: data, encoding: .utf8) {
+                                        await MainActor.run {
+                                            globals.openedJSONPreview = String(preview.prefix(2000))
+                                        }
+                                    }
+                                }
+                            },
+                            onCancel: {
+                                showJSONAppendChooser = false
+                            }
+                        )
+                        .onDisappear { isPresentingTransition = false }
+                        .navigationTitle("Choose Tree JSON to Append")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showJSONAppendChooser = false }
+                            }
+                        }
+                    }
+                }
+                // ========== MODIFICATION: Pass folderBookmark ==========
+                .sheet(isPresented: $showGallery) {
+                    // Get the raw bookmark data
+                    if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+                        if #available(iOS 16.0, *) {
+                            PhotoBrowserView(
+                                folderBookmark: bookmark // <-- Pass the bookmark DATA
+                            )
+                        } else {
+                            Text("Requires iOS 16.0 or later.")
+                                .padding()
+                        }
+                    } else {
+                        // This will now show if the bookmark is missing.
+                        
+                        VStack {
+                            Text("Could not get permission for the folder.")
+                                .font(.headline)
+                                .padding()
+                            Text("Please go to 'Location' and re-select your folder.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                // ========== MODIFICATION: Pass folderBookmark ==========
+                .sheet(isPresented: $showFilteredPhotos) {
+                    // Get the raw bookmark data
+                    if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+                       
+                        
+                        if #available(iOS 16.0, *) {
+                            FilteredPhotoBrowserView(
+                                folderBookmark: bookmark, // <-- Pass the bookmark DATA
+                                filterNames: filteredNamesForPhotos
+                            )
+                        } else {
+                            Text("Requires iOS 16.0 or later.")
+                                .padding()
+                        }
+                    } else {
+                        // This will now show if the bookmark is missing.
+                        VStack {
+                            Text("Could not get permission for the folder.")
+                                .font(.headline)
+                                .padding()
+                            Text("Please go to 'Location' and re-select your folder.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .fullScreenCover(isPresented: $showFamilyTree) {
+                    NavigationStack {
+                        FamilyTreeView()
+                            .navigationTitle("Family Tree")
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showFamilyTree = false }
+                                }
+                            }
+                    }
+                }
+                .fullScreenCover(isPresented: $showFileHandling) {
+                    NavigationStack {
+                        if let cmd = pendingFileHandlingCommand {
+                            FileHandlingView(command: cmd, preselectedURL: globals.selectedJSONURL)
+                                .navigationTitle("File Handling")
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        Button("Done") {
+                                            showFileHandling = false
+                                            pendingFileHandlingCommand = nil
+                                        }
+                                    }
+                                }
+                        } else {
+                            Text("Preparing…")
+                                .navigationTitle("File Handling")
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        Button("Done") { showFileHandling = false }
+                                    }
+                                }
+                        }
+                    }
+                }
+                .sheet(isPresented: $showIndividualEntry) {
+                    NavigationStack {
+                        FamilyDataInputView()
+                            .navigationTitle("Enter/Edit By Member")
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showIndividualEntry = false }
+                                }
+                            }
+                    }
+                }
+                .sheet(isPresented: $showBulkEditor) {
+                    BulkEditorSheet(
+                        isPresented: $showBulkEditor,
+                        bulkText: $bulkText,
+                        showConfirmation: $showConfirmation,
+                        showSuccess: $showSuccess,
+                        successMessage: $successMessage
+                    )
+                }
+                // Modified to dismiss keyboard before showing photo importer to avoid layout conflicts
+                .sheet(isPresented: $showNamePrompt) {
+                    NamePromptSheet(
+                        isPresented: $showNamePrompt,
+                        tempNameInput: $tempNameInput,
+                        onConfirm: { name in
+                            pendingPhotoName = name
+                            // Dismiss any active keyboard before presenting PhotosPicker
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                showPhotoImporter = true
+                            }
+                        },
+                        existingNames: {
+                            if let idx = try? currentPhotoIndexURL(), let names = try? readIndexNames(from: idx) {
+                                return names
+                            } else {
+                                return []
+                            }
+                        }()
+                    )
+                }
         }
     }
 }
