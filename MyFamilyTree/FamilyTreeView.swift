@@ -146,15 +146,53 @@ struct FamilyTreeView: View {
             }
         }
         collectDesc(of: focusedMember.name)
+        
         let relativeLevels = manager.computeRelativeLevels(from: focusedMember.name, using: dict)
-        var finalMembers: [FamilyMember] = []
+
+        // Limit to names that have a computed relative level
         let relevant = finalNames.filter { relativeLevels.keys.contains($0) }
-        let minLevel = relevant.compactMap { relativeLevels[$0] }.min() ?? 0
-        let adjust = (minLevel < 0) ? -minLevel : 0
-        for name in relevant { if let m = dict[name], let rl = relativeLevels[name] { var mm = m; mm.level = rl + adjust; finalMembers.append(mm) } }
-        let grouped = Dictionary(grouping: finalMembers, by: { $0.level })
+
+        // Canonicalize: choose a single level per person (minimum relative level)
+        var chosenLevelForName: [String: Int] = [:]
+        for name in relevant {
+            if let rl = relativeLevels[name] {
+                if let existing = chosenLevelForName[name] {
+                    chosenLevelForName[name] = min(existing, rl)
+                } else {
+                    chosenLevelForName[name] = rl
+                }
+            }
+        }
+
+        // Normalize so that the minimum chosen level becomes 0 (as before)
+        let minChosen = chosenLevelForName.values.min() ?? 0
+        let adjust = (minChosen < 0) ? -minChosen : 0
+
+        // Create a single instance of each member at its canonical level
+        var canonicalMembers: [FamilyMember] = []
+        canonicalMembers.reserveCapacity(chosenLevelForName.count)
+        for (name, rl) in chosenLevelForName {
+            if var m = dict[name] {
+                m.level = rl + adjust
+                canonicalMembers.append(m)
+            }
+        }
+
+        // Final defensive de-duplication by id (ensures no duplicates even if name-based paths overlapped)
+        var seenIDs = Set<UUID>()
+        let uniqueCanonicalMembers = canonicalMembers.filter { seenIDs.insert($0.id).inserted }
+
+        // Group by level and sort
+        let grouped = Dictionary(grouping: uniqueCanonicalMembers, by: { $0.level })
         var levelGroups: [LevelGroup] = []
-        for level in grouped.keys.sorted() { if let mems = grouped[level] { let sortedMems = manager.sortLevel(mems, focused: focusedMember); levelGroups.append(LevelGroup(level: level, members: sortedMems)) } }
+        for level in grouped.keys.sorted() {
+            if let mems = grouped[level] {
+                let sortedMems = manager.sortLevel(mems, focused: focusedMember)
+                var seen = Set<UUID>()
+                let uniqueSorted = sortedMems.filter { seen.insert($0.id).inserted }
+                levelGroups.append(LevelGroup(level: level, members: uniqueSorted))
+            }
+        }
         return levelGroups
     }
     
@@ -258,8 +296,9 @@ struct FamilyTreeView: View {
                     }
                 }
                 
-                let visibleNames = grouped.flatMap { $0.members.map { $0.name } }
-                let visibleMembers = derivedDict.values.filter { visibleNames.contains($0.name) }
+                let allVisibleMembers = grouped.flatMap { $0.members }
+                var seenVisible = Set<UUID>()
+                let visibleMembers = allVisibleMembers.filter { seenVisible.insert($0.id).inserted }
                 
                 // Render the overlay only when size and positions are ready and the trigger has fired
                 if shouldShowOverlay && !positionAnchors.isEmpty && memberButtonSize != .zero {
@@ -285,3 +324,4 @@ struct FamilyTreeView: View {
         }
     }
 }
+
