@@ -180,20 +180,95 @@ struct FamilyTreeView: View {
 
         // Final defensive de-duplication by id (ensures no duplicates even if name-based paths overlapped)
         var seenIDs = Set<UUID>()
-        let uniqueCanonicalMembers = canonicalMembers.filter { seenIDs.insert($0.id).inserted }
-
         // Group by level and sort
-        let grouped = Dictionary(grouping: uniqueCanonicalMembers, by: { $0.level })
+        let grouped = Dictionary(grouping: canonicalMembers, by: { $0.level })
         var levelGroups: [LevelGroup] = []
         for level in grouped.keys.sorted() {
             if let mems = grouped[level] {
-                let sortedMems = manager.sortLevel(mems, focused: focusedMember)
+                if mems.isEmpty { continue }
+                // Use the focused member only if it exists in this level and there is something to sort around
+                let focusedInLevel = (mems.count > 1) ? mems.first(where: { $0.id == focusedMember.id }) : nil
+
+                // Sort defensively; if sort returns empty, fall back to original order
+                let maybeSorted = manager.sortLevel(mems, focused: focusedInLevel)
+                let sortedMems = maybeSorted.isEmpty ? mems : maybeSorted
+
+                // Group spouses adjacently in focused mode with level-local focus
+                let spouseAdj = spouseAdjacentOrder(sortedMems, dict: dict, focused: focusedInLevel)
                 var seen = Set<UUID>()
-                let uniqueSorted = sortedMems.filter { seen.insert($0.id).inserted }
+                let uniqueSorted = spouseAdj.filter { seen.insert($0.id).inserted }
                 levelGroups.append(LevelGroup(level: level, members: uniqueSorted))
             }
         }
         return levelGroups
+    }
+    
+    // Arrange spouses adjacently within a level (focused view only)
+    private func spouseAdjacentOrder(_ members: [FamilyMember], dict: [String: FamilyMember], focused: FamilyMember?) -> [FamilyMember] {
+        // Index by name for quick lookup among this level's members
+        var byName: [String: FamilyMember] = [:]
+        for m in members {
+            if byName[m.name] == nil {
+                byName[m.name] = m
+            }
+        }
+
+        // Build spouse adjacency among members present at this level
+        var adj: [String: Set<String>] = [:]
+        for m in members {
+            let inLevelSpouses = m.spouses.filter { byName[$0] != nil }
+            if !inLevelSpouses.isEmpty {
+                var set = adj[m.name] ?? []
+                for s in inLevelSpouses {
+                    set.insert(s)
+                    var sSet = adj[s] ?? []
+                    sSet.insert(m.name)
+                    adj[s] = sSet
+                }
+                adj[m.name] = set
+            }
+        }
+
+        // Find connected components of the spouse graph
+        var visited = Set<String>()
+        var components: [[FamilyMember]] = []
+        for m in members {
+            guard !visited.contains(m.name) else { continue }
+            var comp: [FamilyMember] = []
+            var stack: [String] = [m.name]
+            visited.insert(m.name)
+            while let n = stack.popLast() {
+                if let mem = byName[n] { comp.append(mem) }
+                for nei in (adj[n] ?? []) where !visited.contains(nei) {
+                    visited.insert(nei)
+                    stack.append(nei)
+                }
+            }
+            components.append(comp)
+        }
+
+        // Order within each component: prefer nodes with higher spouse-degree first, then by name for stability
+        func degree(_ m: FamilyMember) -> Int { (adj[m.name]?.count ?? 0) }
+        let orderedComponents: [[FamilyMember]] = components.map { comp in
+            comp.sorted { a, b in
+                let da = degree(a), db = degree(b)
+                if da != db { return da > db }
+                return a.name < b.name
+            }
+        }
+
+        // Put the component containing the focused member first (if present)
+        var focusFirst = orderedComponents
+        if let focused = focused {
+            if let idx = orderedComponents.firstIndex(where: { comp in comp.contains(where: { $0.id == focused.id }) }) {
+                let comp = orderedComponents[idx]
+                focusFirst.remove(at: idx)
+                focusFirst.insert(comp, at: 0)
+            }
+        }
+
+        // Flatten
+        return focusFirst.flatMap { $0 }
     }
     
     func color(for level: Int) -> Color {
