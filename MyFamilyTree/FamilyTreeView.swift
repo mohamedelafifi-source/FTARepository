@@ -3,9 +3,14 @@
 //
 // Created by Mohamed El Afifi on 9/30/25.
 //
-// UPDATED with all fixes:
-// 1. Added the missing '}' to the end of 'spouseAdjacentOrder'
-//    to fix the 'does not conform to protocol View' error.
+// UPDATED with ALL fixes:
+// 1. Corrected 'derivedDict' @State bug.
+// 2. Added '.id()' modifier to ScrollView.
+// 3. Added 'isDrawingSuspended' logic for stable line drawing.
+// 4. Replaced '.onTapGesture' with 'Button' to fix "two-click" bug.
+// 5. Replaced complex closure in Canvas with simple 'if/else'
+//    to fix compiler crash.
+// 6. Corrected all typos (mmems, missing braces, etc.)
 
 import SwiftUI
 import Foundation
@@ -52,18 +57,20 @@ struct SpouseConnectorOverlay: View {
                     let spousePoint = proxy[spouseAnchor]
                     let yOffset: CGFloat = buttonHeight / 2 - 5
                     
-                    let (initialStartPoint, initialEndPoint) = {
-                        if memberPoint.x < spousePoint.x {
-                            let start = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
-                            let end = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
-                            return (start, end)
-                        } else {
-                            let start = CGPoint(x: spousePoint.x + buttonWidth / 2, y: spousePoint.y + yOffset)
-                            let end = CGPoint(x: memberPoint.x - buttonWidth / 2, y: memberPoint.y + yOffset)
-                            return (start, end)
-                        }
-                    }()
+                    // Simple if/else to prevent compiler crash
+                    let initialStartPoint: CGPoint
+                    let initialEndPoint: CGPoint
                     
+                    if memberPoint.x < spousePoint.x {
+                        // Member is on the left
+                        initialStartPoint = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
+                        initialEndPoint = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
+                    } else {
+                        // Spouse is on the left
+                        initialStartPoint = CGPoint(x: spousePoint.x + buttonWidth / 2, y: spousePoint.y + yOffset)
+                        initialEndPoint = CGPoint(x: memberPoint.x - buttonWidth / 2, y: memberPoint.y + yOffset)
+                    }
+
                     let shortenedStartPoint = CGPoint(x: initialStartPoint.x - extensionAmount, y: initialStartPoint.y)
                     let shortenedEndPoint = CGPoint(x: initialEndPoint.x + extensionAmount, y: initialEndPoint.y)
                     let controlPoint1 = CGPoint(x: shortenedStartPoint.x + (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedStartPoint.y)
@@ -286,7 +293,7 @@ struct FamilyTreeView: View {
             }
         }
         return focusFirst.flatMap { $0 }
-    } // <--- THIS IS THE FIX. THE MISSING BRACE IS HERE.
+    }
     
     func color(for level: Int) -> Color {
         let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal]
@@ -376,26 +383,30 @@ struct FamilyTreeView: View {
                                     ForEach(group.members, id: \.id) { member in
                                         let isFocused = member.id == manager.focusedMemberId
                                         
-                                        Text(member.name)
-                                            .padding()
-                                            .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
-                                            .cornerRadius(8)
-                                            .background(
-                                                GeometryReader { proxy in
-                                                    Color.clear
-                                                        .onAppear {
-                                                            if memberButtonSize == .zero {
-                                                                memberButtonSize = proxy.size
+                                        // --- THIS IS THE "TWO-CLICK" FIX ---
+                                        Button(action: {
+                                            manager.focusedMemberId = member.id
+                                        }) {
+                                            Text(member.name)
+                                                .padding()
+                                                .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
+                                                .cornerRadius(8)
+                                                .background(
+                                                    GeometryReader { proxy in
+                                                        Color.clear
+                                                            .onAppear {
+                                                                if memberButtonSize == .zero {
+                                                                    memberButtonSize = proxy.size
+                                                                }
                                                             }
-                                                        }
-                                                        .anchorPreference(key: MemberPositionKey.self, value: .center) {
-                                                            [member.name: $0]
-                                                        }
-                                                }
-                                            )
-                                            .onTapGesture {
-                                                manager.focusedMemberId = member.id
-                                            }
+                                                            .anchorPreference(key: MemberPositionKey.self, value: .center) {
+                                                                [member.name: $0]
+                                                            }
+                                                    }
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                        // --- END OF "TWO-CLICK" FIX ---
                                     }
                                 }
                                 .padding(.horizontal)
