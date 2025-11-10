@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Family Tree JSON</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-		</dict>
-		<dict/>
-	</array>
-	<key>CFBundleGetInfoString</key>
+	<array/>
+	<key>CFBundleName</key>
+	<string></string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.mea.myfamilytree</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>CFBundleExecutable</key>
 	<string></string>
 </dict>
 </plist>
