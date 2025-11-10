@@ -1,10 +1,11 @@
+// FamilyTreeView.swift
+// MyFamilyTree
 //
-//  FamilyTreeView.swift
-//  MyFamilyTree
+// Created by Mohamed El Afifi on 9/30/25.
 //
-//  Created by Mohamed El Afifi on 9/30/25.
-//
-
+// UPDATED with all fixes:
+// 1. Added the missing '}' to the end of 'spouseAdjacentOrder'
+//    to fix the 'does not conform to protocol View' error.
 
 import SwiftUI
 import Foundation
@@ -19,66 +20,63 @@ struct MemberPositionKey: PreferenceKey {
     }
 }
 
-// MARK: - Connector Overlay to draw lines between spouses
+// MARK: - Helper Struct for Spouse Pairs
+struct SpousePair: Identifiable {
+    let id = UUID()
+    let name1: String
+    let name2: String
+}
+
+// MARK: - Connector Overlay (with Canvas)
 struct SpouseConnectorOverlay: View {
     let anchors: [String: Anchor<CGPoint>]
-    let members: [FamilyMember]
+    let pairs: [SpousePair]
     let buttonWidth: CGFloat
     let buttonHeight: CGFloat
     
     // Define how much the line should extend past the button edge
-    // I increased the extension from 10 to 20
     let extensionAmount: CGFloat = 20
     
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                ForEach(members, id: \.id) { member in
-                    // Ensure we only draw the line once per spouse pair
-                    let sortedSpouses = member.spouses.filter { $0 > member.name }
-                    
-                    ForEach(sortedSpouses, id: \.self) { spouseName in
-                        if let memberAnchor = anchors[member.name],
-                           let spouseAnchor = anchors[spouseName] {
-                            
-                            let memberPoint = proxy[memberAnchor]
-                            let spousePoint = proxy[spouseAnchor]
-                            
-                            // Anchor is .center, so we move down half the height minus a small offset
-                            let yOffset: CGFloat = buttonHeight / 2 - 5
-                            
-                            // Calculate the initial start and end points at the edges of the buttons (always left-to-right)
-                            let (initialStartPoint, initialEndPoint) = {
-                                if memberPoint.x < spousePoint.x {
-                                    // Member is on the left
-                                    let start = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
-                                    let end = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
-                                    return (start, end)
-                                } else {
-                                    // Spouse is on the left
-                                    let start = CGPoint(x: spousePoint.x + buttonWidth / 2, y: spousePoint.y + yOffset)
-                                    let end = CGPoint(x: memberPoint.x - buttonWidth / 2, y: memberPoint.y + yOffset)
-                                    return (start, end)
-                                }
-                            }()
-                            
-                            // **FIX:** Extend the line on both the start and end sides
-                            let shortenedStartPoint = CGPoint(x: initialStartPoint.x - extensionAmount, y: initialStartPoint.y)
-                            let shortenedEndPoint = CGPoint(x: initialEndPoint.x + extensionAmount, y: initialEndPoint.y)
-                            
-                            // Create a slight curve (optional, but maintained for visual style)
-                            let controlPoint1 = CGPoint(x: shortenedStartPoint.x + (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedStartPoint.y)
-                            let controlPoint2 = CGPoint(x: shortenedStartPoint.x + 2 * (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedEndPoint.y)
-                            
-                            Path { path in
-                                path.move(to: shortenedStartPoint)
-                                path.addCurve(to: shortenedEndPoint, control1: controlPoint1, control2: controlPoint2)
-                            }
-                            .stroke(Color.black.opacity(0.8), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        }
+            Canvas { context, size in
+                var path = Path()
+                
+                for pair in pairs {
+                    guard let memberAnchor = anchors[pair.name1],
+                          let spouseAnchor = anchors[pair.name2] else {
+                        continue
                     }
+                    
+                    let memberPoint = proxy[memberAnchor]
+                    let spousePoint = proxy[spouseAnchor]
+                    let yOffset: CGFloat = buttonHeight / 2 - 5
+                    
+                    let (initialStartPoint, initialEndPoint) = {
+                        if memberPoint.x < spousePoint.x {
+                            let start = CGPoint(x: memberPoint.x + buttonWidth / 2, y: memberPoint.y + yOffset)
+                            let end = CGPoint(x: spousePoint.x - buttonWidth / 2, y: spousePoint.y + yOffset)
+                            return (start, end)
+                        } else {
+                            let start = CGPoint(x: spousePoint.x + buttonWidth / 2, y: spousePoint.y + yOffset)
+                            let end = CGPoint(x: memberPoint.x - buttonWidth / 2, y: memberPoint.y + yOffset)
+                            return (start, end)
+                        }
+                    }()
+                    
+                    let shortenedStartPoint = CGPoint(x: initialStartPoint.x - extensionAmount, y: initialStartPoint.y)
+                    let shortenedEndPoint = CGPoint(x: initialEndPoint.x + extensionAmount, y: initialEndPoint.y)
+                    let controlPoint1 = CGPoint(x: shortenedStartPoint.x + (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedStartPoint.y)
+                    let controlPoint2 = CGPoint(x: shortenedStartPoint.x + 2 * (shortenedEndPoint.x - shortenedStartPoint.x) / 3, y: shortenedEndPoint.y)
+                    
+                    path.move(to: shortenedStartPoint)
+                    path.addCurve(to: shortenedEndPoint, control1: controlPoint1, control2: controlPoint2)
                 }
+                
+                context.stroke(path, with: .color(Color.black.opacity(0.8)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                
             }
+            .allowsHitTesting(false)
         }
     }
 }
@@ -91,10 +89,7 @@ struct FamilyTreeView: View {
     // State variables
     @State private var positionAnchors: [String: Anchor<CGPoint>] = [:]
     @State private var memberButtonSize: CGSize = .zero
-    @State private var derivedDict: [String: FamilyMember] = [:]
-    
-    // NEW STATE: To force a final view update after collecting preferences.
-    @State private var shouldShowOverlay = false
+    @State private var isDrawingSuspended = true
     
     private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
         var visited = Set<String>()
@@ -149,51 +144,81 @@ struct FamilyTreeView: View {
         
         let relativeLevels = manager.computeRelativeLevels(from: focusedMember.name, using: dict)
 
-        // Limit to names that have a computed relative level
         let relevant = finalNames.filter { relativeLevels.keys.contains($0) }
+        let relevantSet = Set(relevant)
 
-        // Canonicalize: choose a single level per person (minimum relative level)
-        var chosenLevelForName: [String: Int] = [:]
+        var spouseGraph: [String: Set<String>] = [:]
         for name in relevant {
-            if let rl = relativeLevels[name] {
-                if let existing = chosenLevelForName[name] {
-                    chosenLevelForName[name] = min(existing, rl)
-                } else {
-                    chosenLevelForName[name] = rl
+            guard let member = dict[name] else { continue }
+            let relevantSpouses = member.spouses.filter { relevantSet.contains($0) }
+            for spouseName in relevantSpouses {
+                spouseGraph[name, default: []].insert(spouseName)
+                spouseGraph[spouseName, default: []].insert(name)
+            }
+        }
+
+        var finalCanonicalLevel: [String: Int] = [:]
+        var visited = Set<String>()
+        
+        for name in relevant {
+            guard !visited.contains(name) else { continue }
+            
+            var component: [String] = []
+            var stack: [String] = [name]
+            var minLevelInComponent = relativeLevels[name] ?? 0
+            
+            visited.insert(name)
+            
+            while let currentName = stack.popLast() {
+                component.append(currentName)
+                minLevelInComponent = min(minLevelInComponent, relativeLevels[currentName] ?? 0)
+                
+                for spouse in spouseGraph[currentName, default: []] {
+                    if !visited.contains(spouse) {
+                        visited.insert(spouse)
+                        stack.append(spouse)
+                    }
+                }
+            }
+            
+            for componentMemberName in component {
+                finalCanonicalLevel[componentMemberName] = minLevelInComponent
+            }
+        }
+        
+        for name in relevant {
+            if finalCanonicalLevel[name] == nil {
+                if let level = relativeLevels[name] {
+                    finalCanonicalLevel[name] = level
                 }
             }
         }
 
-        // Normalize so that the minimum chosen level becomes 0 (as before)
-        let minChosen = chosenLevelForName.values.min() ?? 0
+        let minChosen = finalCanonicalLevel.values.min() ?? 0
         let adjust = (minChosen < 0) ? -minChosen : 0
 
-        // Create a single instance of each member at its canonical level
         var canonicalMembers: [FamilyMember] = []
-        canonicalMembers.reserveCapacity(chosenLevelForName.count)
-        for (name, rl) in chosenLevelForName {
+        canonicalMembers.reserveCapacity(finalCanonicalLevel.count)
+        
+        for (name, rl) in finalCanonicalLevel {
             if var m = dict[name] {
                 m.level = rl + adjust
                 canonicalMembers.append(m)
             }
         }
 
-        // Final defensive de-duplication by id (ensures no duplicates even if name-based paths overlapped)
         var seenIDs = Set<UUID>()
-        // Group by level and sort
-        let grouped = Dictionary(grouping: canonicalMembers, by: { $0.level })
+        let uniqueMembers = canonicalMembers.filter { seenIDs.insert($0.id).inserted }
+
+        let grouped = Dictionary(grouping: uniqueMembers, by: { $0.level })
         var levelGroups: [LevelGroup] = []
         for level in grouped.keys.sorted() {
             if let mems = grouped[level] {
                 if mems.isEmpty { continue }
-                // Use the focused member only if it exists in this level and there is something to sort around
                 let focusedInLevel = (mems.count > 1) ? mems.first(where: { $0.id == focusedMember.id }) : nil
-
-                // Sort defensively; if sort returns empty, fall back to original order
                 let maybeSorted = manager.sortLevel(mems, focused: focusedInLevel)
                 let sortedMems = maybeSorted.isEmpty ? mems : maybeSorted
-
-                // Group spouses adjacently in focused mode with level-local focus
+                
                 let spouseAdj = spouseAdjacentOrder(sortedMems, dict: dict, focused: focusedInLevel)
                 var seen = Set<UUID>()
                 let uniqueSorted = spouseAdj.filter { seen.insert($0.id).inserted }
@@ -203,9 +228,7 @@ struct FamilyTreeView: View {
         return levelGroups
     }
     
-    // Arrange spouses adjacently within a level (focused view only)
     private func spouseAdjacentOrder(_ members: [FamilyMember], dict: [String: FamilyMember], focused: FamilyMember?) -> [FamilyMember] {
-        // Index by name for quick lookup among this level's members
         var byName: [String: FamilyMember] = [:]
         for m in members {
             if byName[m.name] == nil {
@@ -213,7 +236,6 @@ struct FamilyTreeView: View {
             }
         }
 
-        // Build spouse adjacency among members present at this level
         var adj: [String: Set<String>] = [:]
         for m in members {
             let inLevelSpouses = m.spouses.filter { byName[$0] != nil }
@@ -229,7 +251,6 @@ struct FamilyTreeView: View {
             }
         }
 
-        // Find connected components of the spouse graph
         var visited = Set<String>()
         var components: [[FamilyMember]] = []
         for m in members {
@@ -247,7 +268,6 @@ struct FamilyTreeView: View {
             components.append(comp)
         }
 
-        // Order within each component: prefer nodes with higher spouse-degree first, then by name for stability
         func degree(_ m: FamilyMember) -> Int { (adj[m.name]?.count ?? 0) }
         let orderedComponents: [[FamilyMember]] = components.map { comp in
             comp.sorted { a, b in
@@ -257,7 +277,6 @@ struct FamilyTreeView: View {
             }
         }
 
-        // Put the component containing the focused member first (if present)
         var focusFirst = orderedComponents
         if let focused = focused {
             if let idx = orderedComponents.firstIndex(where: { comp in comp.contains(where: { $0.id == focused.id }) }) {
@@ -266,137 +285,157 @@ struct FamilyTreeView: View {
                 focusFirst.insert(comp, at: 0)
             }
         }
-
-        // Flatten
         return focusFirst.flatMap { $0 }
-    }
+    } // <--- THIS IS THE FIX. THE MISSING BRACE IS HERE.
     
     func color(for level: Int) -> Color {
         let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal]
         return palette[level % palette.count]
     }
     
-    var grouped: [LevelGroup] {
-        if derivedDict.isEmpty { return [] }
-        if let focus = manager.focusedMemberId {
-            return buildConnectedGroups(from: derivedDict, focusId: focus)
-        } else {
-            return buildAllLevels(from: derivedDict)
-        }
-    }
-    
     var body: some View {
-        ZStack {
-            // Conditional rendering based on shouldShowOverlay
-            if shouldShowOverlay || positionAnchors.isEmpty {
-                VStack {
-                    if let focusedMemberId = manager.focusedMemberId,
-                        let focusedMember = manager.members.first(where: { $0.id == focusedMemberId }) {
-                        Text("Focused: \(focusedMember.name)")
-                            .font(.headline)
-                            .padding(.top)
-                            .padding(.bottom, 5)
-                    }
-                    
-                    HStack {
-                        Button("Refresh Tree") {
-                            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
-                        }
-                        .buttonStyle(.bordered)
+        
+        // 'derivedDict' is calculated fresh every time.
+        let derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+        
+        // 1. Get the 'grouped' data first.
+        let grouped: [LevelGroup] = {
+            if derivedDict.isEmpty { return [] }
+            if let focus = manager.focusedMemberId {
+                return buildConnectedGroups(from: derivedDict, focusId: focus)
+            } else {
+                return buildAllLevels(from: derivedDict)
+            }
+        }()
 
-                        if manager.focusedMemberId != nil {
-                            Button("Show Full Tree") {
-                                manager.focusedMemberId = nil
-                                derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
-                            }
-                            .buttonStyle(.bordered)
-                        }
+        // 2. Get all visible members and their names.
+        let allVisibleMembers = grouped.flatMap { $0.members }
+        var seenVisible = Set<UUID>()
+        let visibleMembers = allVisibleMembers.filter { seenVisible.insert($0.id).inserted }
+        let visibleMemberNames = Set(visibleMembers.map { $0.name })
+
+        // 3. Pre-calculate the pairs array.
+        let pairs: [SpousePair] = {
+            var pairs: [SpousePair] = []
+            var seenPairs = Set<Set<String>>()
+            for member in visibleMembers {
+                let spousesToDraw = member.spouses.filter { visibleMemberNames.contains($0) }
+                for spouseName in spousesToDraw {
+                    let pairSet: Set<String> = [member.name, spouseName]
+                    if seenPairs.insert(pairSet).inserted {
+                        pairs.append(SpousePair(name1: member.name, name2: spouseName))
                     }
-                    .padding()
-                    
-                    if manager.isDirty {
-                        Text("You have unsaved changes. Use File > Save")
-                            //.font(.footnote)
-                            .font(.headline)
-                            .foregroundStyle(.red)
-                            .padding(.horizontal)
-                    }
-                    
-                    ScrollView(.vertical) {
-                        VStack(spacing: 40) {
-                            ForEach(grouped, id: \.level) { group in
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 20) {
-                                        ForEach(group.members, id: \.id) { member in
-                                            let isFocused = member.id == manager.focusedMemberId
-                                            
-                                            Text(member.name)
-                                                .padding()
-                                                .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
-                                                .cornerRadius(8)
-                                                .background(
-                                                    // Robust size and position collection
-                                                    GeometryReader { proxy in
-                                                        Color.clear
-                                                            .onAppear {
-                                                                // Only measure the size once
-                                                                if memberButtonSize == .zero {
-                                                                    memberButtonSize = proxy.size
-                                                                }
-                                                            }
-                                                            .anchorPreference(key: MemberPositionKey.self, value: .center) {
-                                                                [member.name: $0]
-                                                            }
-                                                    }
-                                                )
-                                                .onTapGesture {
-                                                    manager.focusedMemberId = member.id
-                                                }
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
-                            }
-                        }
-                        .padding(.vertical)
-                        // Explicitly trigger a re-render after anchors are collected
-                        .onPreferenceChange(MemberPositionKey.self) { value in
-                            positionAnchors = value
-                            
-                            // This ensures the view re-renders with the collected anchors on the next frame
-                            DispatchQueue.main.async {
-                                shouldShowOverlay = true
-                            }
-                        }
-                    }
-                }
-                
-                let allVisibleMembers = grouped.flatMap { $0.members }
-                var seenVisible = Set<UUID>()
-                let visibleMembers = allVisibleMembers.filter { seenVisible.insert($0.id).inserted }
-                
-                // Render the overlay only when size and positions are ready and the trigger has fired
-                if shouldShowOverlay && !positionAnchors.isEmpty && memberButtonSize != .zero {
-                    SpouseConnectorOverlay(
-                        anchors: positionAnchors,
-                        members: visibleMembers,
-                        buttonWidth: memberButtonSize.width,
-                        buttonHeight: memberButtonSize.height
-                    )
-                    .allowsHitTesting(false)
                 }
             }
-        }
+            return pairs
+        }()
+        
+        // 4. Check if anchors are ready.
+        let allAnchorsCollected = visibleMemberNames.isSubset(of: Set(positionAnchors.keys))
+
+        // 5. Build the view.
+        ZStack {
+            VStack {
+                if let focusedMemberId = manager.focusedMemberId,
+                   let focusedMember = manager.members.first(where: { $0.id == focusedMemberId }) {
+                    Text("Focused: \(focusedMember.name)")
+                        .font(.headline)
+                        .padding(.top)
+                        .padding(.bottom, 5)
+                }
+                
+                HStack {
+                    Button("Refresh Tree") {
+                        let currentFocus = manager.focusedMemberId
+                        manager.focusedMemberId = nil
+                        manager.focusedMemberId = currentFocus
+                    }
+                    .buttonStyle(.bordered)
+
+                    if manager.focusedMemberId != nil {
+                        Button("Show Full Tree") {
+                            manager.focusedMemberId = nil
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding()
+                
+                if manager.isDirty {
+                    Text("You have unsaved changes. Use File > Save")
+                        .font(.headline)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
+                
+                ScrollView(.vertical) {
+                    VStack(spacing: 40) {
+                        ForEach(grouped, id: \.level) { group in
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 20) {
+                                    ForEach(group.members, id: \.id) { member in
+                                        let isFocused = member.id == manager.focusedMemberId
+                                        
+                                        Text(member.name)
+                                            .padding()
+                                            .background(isFocused ? Color.red.opacity(0.5) : color(for: group.level).opacity(0.3))
+                                            .cornerRadius(8)
+                                            .background(
+                                                GeometryReader { proxy in
+                                                    Color.clear
+                                                        .onAppear {
+                                                            if memberButtonSize == .zero {
+                                                                memberButtonSize = proxy.size
+                                                            }
+                                                        }
+                                                        .anchorPreference(key: MemberPositionKey.self, value: .center) {
+                                                            [member.name: $0]
+                                                        }
+                                                }
+                                            )
+                                            .onTapGesture {
+                                                manager.focusedMemberId = member.id
+                                            }
+                                    }
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .padding(.vertical)
+                    // Add the ID to force a full reset on focus change
+                    .id(manager.focusedMemberId)
+                    .onPreferenceChange(MemberPositionKey.self) { value in
+                        positionAnchors = value
+                        // Once anchors start reporting,
+                        // we can allow drawing.
+                        isDrawingSuspended = false
+                    }
+                }
+            } // End of VStack
+            
+            // 6. The overlay logic checks our suspension flag.
+            if allAnchorsCollected && memberButtonSize != .zero && !pairs.isEmpty && !isDrawingSuspended {
+                SpouseConnectorOverlay(
+                    anchors: positionAnchors,
+                    pairs: pairs,
+                    buttonWidth: memberButtonSize.width,
+                    buttonHeight: memberButtonSize.height
+                )
+            }
+            
+        } // End of ZStack
         .onAppear {
-            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+            isDrawingSuspended = true
         }
         .onChange(of: manager.focusedMemberId) { _ in
-            // Reset state to force a clean re-measurement cycle and hide the overlay initially
-            memberButtonSize = .zero
+            // Suspend drawing and clear *only* the anchors.
+            isDrawingSuspended = true
             positionAnchors = [:]
-            shouldShowOverlay = false // Hide the overlay until new anchors are ready
-            derivedDict = manager.makeDerivedDictionaryForDisplay(applySiblingInference: true)
+        }
+        .onChange(of: manager.members) { _ in
+            isDrawingSuspended = true
+            positionAnchors = [:]
         }
     }
 }
-
