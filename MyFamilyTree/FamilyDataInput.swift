@@ -361,38 +361,66 @@ struct FamilyDataInputView: View {
             var children: [String] = []
             var siblings: [String] = []
 
+            // Split components on ';' and handle case-insensitive keys by splitting once on ':'
             let components = line.components(separatedBy: ";")
             for component in components {
-                let trimmed = component.trimmingCharacters(in: .whitespaces)
-                if trimmed.uppercased().hasPrefix("NAME:") {
-                    name = trimmed.replacingOccurrences(of: "NAME:", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespaces)
-                } else if trimmed.uppercased().hasPrefix("PARENTS:") {
-                    let value = trimmed.replacingOccurrences(of: "PARENTS:", with: "", options: .caseInsensitive)
-                    parents = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                } else if trimmed.uppercased().hasPrefix("SPOUSES:") {
-                    let value = trimmed.replacingOccurrences(of: "SPOUSES:", with: "", options: .caseInsensitive)
-                    spouses = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                } else if trimmed.uppercased().hasPrefix("CHILDREN:") {
-                    let value = trimmed.replacingOccurrences(of: "CHILDREN:", with: "", options: .caseInsensitive)
-                    children = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                } else if trimmed.uppercased().hasPrefix("SIBLINGS:") {
-                    let value = trimmed.replacingOccurrences(of: "SIBLINGS:", with: "", options: .caseInsensitive)
-                    siblings = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                // Trim outer whitespace for the component
+                let trimmedComponent = component.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedComponent.isEmpty else { continue }
+
+                // Split only on the first ':' to support values that may contain ':' characters
+                let parts = trimmedComponent.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2 else { continue }
+
+                let rawKey = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = rawKey.lowercased()
+                let rawValue = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Helper to parse comma-separated lists with trimming and dropping empties
+                func parseList(_ value: String) -> [String] {
+                    return value
+                        .split(separator: ",")
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                }
+
+                switch key {
+                case "name":
+                    name = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                case "parents":
+                    parents = parseList(rawValue)
+                case "spouses":
+                    spouses = parseList(rawValue)
+                case "children":
+                    children = parseList(rawValue)
+                case "siblings":
+                    siblings = parseList(rawValue)
+                default:
+                    // Unknown key; ignore
+                    break
                 }
             }
 
-            guard !name.isEmpty else { continue }
+            // Require at least a name
+            let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !finalName.isEmpty else { continue }
 
-            if var existing = manager.membersDictionary[name] {
-                // Merge without duplicates
-                existing.parents.append(contentsOf: parents.filter { !existing.parents.contains($0) })
-                existing.spouses.append(contentsOf: spouses.filter { !existing.spouses.contains($0) })
-                existing.children.append(contentsOf: children.filter { !existing.children.contains($0) })
-                existing.siblings.append(contentsOf: siblings.filter { !existing.siblings.contains($0) })
-                manager.membersDictionary[name] = existing
+            if var existing = manager.membersDictionary[finalName] {
+                // Merge without duplicates, preserving order where possible
+                let mergeUnique: (_ current: inout [String], _ incoming: [String]) -> Void = { current, incoming in
+                    for item in incoming where !item.isEmpty {
+                        if !current.contains(item) { current.append(item) }
+                    }
+                }
+
+                mergeUnique(&existing.parents, parents)
+                mergeUnique(&existing.spouses, spouses)
+                mergeUnique(&existing.children, children)
+                mergeUnique(&existing.siblings, siblings)
+                manager.membersDictionary[finalName] = existing
             } else {
                 let member = FamilyMember(
-                    name: name,
+                    name: finalName,
                     gender: nil,
                     imageName: "",
                     parents: parents,
@@ -402,15 +430,12 @@ struct FamilyDataInputView: View {
                     isImplicit: false,
                     level: 0
                 )
-                manager.membersDictionary[name] = member
+                manager.membersDictionary[finalName] = member
             }
         }
 
         // Finalize links and levels
-        //==========================
-        //This code is in FamilyDataManager
         manager.linkFamilyRelations()
         manager.assignLevels()
     }
 }
-
