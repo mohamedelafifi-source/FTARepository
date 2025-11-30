@@ -5,7 +5,6 @@
 //  Created by Mohamed El Afifi on 9/30/25.
 //
 
-
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -69,6 +68,22 @@ struct TextDocument: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         return FileWrapper(regularFileWithContents: text.data(using: .utf8)!)
     }
+}
+
+
+// MARK: - Helper
+
+private func resolveBookmarkIfNeeded(for url: URL) -> URL? {
+    // Try to find a corresponding bookmark in UserDefaults
+    if let data = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+        var isStale = false
+        do {
+            let folder = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            if url.path.hasPrefix(folder.path) { return url } // It's in the selected folder
+        } catch {}
+    }
+    // Otherwise just return the original
+    return url
 }
 
 
@@ -200,12 +215,20 @@ struct FileHandlingView: View {
     
     private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
         switch result {
-        case .success(let url):
+        case .success(let originalURL):
+            guard let url = resolveBookmarkIfNeeded(for: originalURL) else {
+                alertMessage = "Failed to resolve file URL permissions."
+                showingAlert = true
+                return
+            }
             let started = url.startAccessingSecurityScopedResource()
             guard started else {
                 alertMessage = "Access to the selected file was denied."
                 showingAlert = true
                 return
+            }
+            defer {
+                url.stopAccessingSecurityScopedResource()
             }
             
             // Ensure the file is local if it's an iCloud item
@@ -261,9 +284,6 @@ struct FileHandlingView: View {
                     showingAlert = true
                 }
             }
-            defer {
-                url.stopAccessingSecurityScopedResource()
-            }
             return
             
         case .failure(let error):
@@ -272,5 +292,4 @@ struct FileHandlingView: View {
         }
     }
 }
-
 

@@ -296,7 +296,7 @@ struct FamilyTreeView: View {
     }
     
     func color(for level: Int) -> Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal]
+        let palette: [Color] = [.blue, .gray, .green, .orange, .purple, .pink, .teal,.yellow]
         return palette[level % palette.count]
     }
     

@@ -128,7 +128,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "22"
             endingLineNumber = "22"
-            landmarkName = "readIndexNames(from:)"
+            landmarkName = "resolvedFolderURL()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -189,15 +189,6 @@
             continueAfterRunningActions = "No"
             symbolName = "*0x102c74b6c">
             <Locations>
-               <Location
-                  uuid = "AF8A9397-3F31-4D35-8691-1B957268DA46 - 61db3fdf2d7c9f81"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "mach_msg2_trap"
-                  moduleName = "libsystem_kernel.dylib"
-                  usesParentBreakpointCondition = "Yes">
-               </Location>
             </Locations>
          </BreakpointContent>
       </BreakpointProxy>

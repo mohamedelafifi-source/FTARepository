@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct PhotosMenu: View {
     @ObservedObject var globals = GlobalVariables.shared
@@ -18,6 +19,17 @@ struct PhotosMenu: View {
 
     @Binding var showResetConfirm: Bool
 
+    private func resolvedFolderURL() -> URL? {
+        guard let bookmarkData = UserDefaults.standard.data(forKey: "selectedFolderBookmark") else { return nil }
+        var isStale = false
+        do {
+            let url = try URL(resolvingBookmarkData: bookmarkData, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     private func readIndexNames(from indexURL: URL) throws -> Set<String> {
         let data = try Data(contentsOf: indexURL)
         if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -33,44 +45,65 @@ struct PhotosMenu: View {
     var body: some View {
         Group {
             Button("Import a Photo …") {
-                guard globals.selectedFolderURL != nil else {
+                guard let folder = resolvedFolderURL() else {
                     alertMessage = "Select a storage folder first."
                     showAlert = true
                     return
                 }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Failed to access the selected folder."
+                    showAlert = true
+                    return
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+
                 tempNameInput = ""
                 showNamePrompt = true
             }
-            .disabled(globals.selectedFolderURL == nil)
+            .disabled(resolvedFolderURL() == nil)
             Button("Browse All Photos") {
-                if let folder = globals.selectedFolderURL {
-                    do {
-                        let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                        globals.selectedJSONURL = url
-                        print("[PhotosMenu] selectedJSONURL set to:", url.path)
-                    } catch {
-                        alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
-                        showAlert = true
-                        return
-                    }
-                    showGallery = true
-                } else {
+                guard let folder = resolvedFolderURL() else {
                     alertMessage = "Select a storage folder first."
                     showAlert = true
+                    return
                 }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Failed to access the selected folder."
+                    showAlert = true
+                    return
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+
+                do {
+                    let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
+                    globals.selectedJSONURL = url
+                    print("[PhotosMenu] selectedJSONURL set to:", url.path)
+                } catch {
+                    alertMessage = "Failed to prepare photo index: \(error.localizedDescription)"
+                    showAlert = true
+                    return
+                }
+                showGallery = true
             }
-            .disabled(globals.selectedFolderURL == nil)
+            .disabled(resolvedFolderURL() == nil)
             Button("Browse Tree Photos") {
                 if dataManager.membersDictionary.isEmpty {
                     alertMessage = "No family data loaded. Please add or parse data first."
                     showAlert = true
                     return
                 }
-                guard let folder = globals.selectedFolderURL else {
+                guard let folder = resolvedFolderURL() else {
                     alertMessage = "Select a storage folder first (Photos menu)."
                     showAlert = true
                     return
                 }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Failed to access the selected folder."
+                    showAlert = true
+                    return
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+
                 do {
                     let url = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
                     globals.selectedJSONURL = url
@@ -140,15 +173,22 @@ struct PhotosMenu: View {
                     showFilteredPhotos = true
                 }
             }
-            .disabled(globals.selectedFolderURL == nil || dataManager.membersDictionary.isEmpty)
+            .disabled(resolvedFolderURL() == nil || dataManager.membersDictionary.isEmpty)
 
             Divider()
             Button(role: .destructive) {
-                guard globals.selectedFolderURL != nil else {
+                guard let folder = resolvedFolderURL() else {
                     alertMessage = "Please select a storage folder first (Photos menu)."
                     showAlert = true
                     return
                 }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    alertMessage = "Failed to access the selected folder."
+                    showAlert = true
+                    return
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+
                 showResetConfirm = true
             } label: {
                 Label("Reset Photo Index", systemImage: "arrow.counterclockwise")

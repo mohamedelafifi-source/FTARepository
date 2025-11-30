@@ -4,14 +4,6 @@
 //
 //  Created by Mohamed El Afifi on 9/30/25.
 //
-
-import Foundation
-//
-//  ImageHandling.swift
-//  SwiftTreeTwo
-//
-//  Created by Mohamed El Afifi on 9/14/25.
-//
 import Foundation
 import SwiftUI
 import PhotosUI
@@ -30,6 +22,38 @@ struct PhotoIndexEntry: Identifiable, Codable, Hashable {
     var name: String
     var fileName: String
 }
+
+extension PhotoIndexEntry {
+    static func compareByNameInsensitive(_ a: PhotoIndexEntry, _ b: PhotoIndexEntry) -> Bool {
+        a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+    }
+}
+
+// Helper function to parse PhotoIndexEntry array from JSON Data with fallback parsing
+private func parsePhotoIndexEntries(from data: Data) throws -> [PhotoIndexEntry] {
+    if data.isEmpty { return [] }
+    let jsonAny: Any = try JSONSerialization.jsonObject(with: data)
+    var parsedArray: [PhotoIndexEntry] = []
+    if let arrayOfDicts = jsonAny as? [[String: Any]] {
+        for dict in arrayOfDicts {
+            guard let name = dict["name"] as? String else { continue }
+            let fileNameFromDict: String? = (dict["fileName"] as? String) ?? (dict["filename"] as? String)
+            guard let fileName = fileNameFromDict else { continue }
+            let entry = PhotoIndexEntry(name: name, fileName: fileName)
+            parsedArray.append(entry)
+        }
+    } else if let dictOfDicts = jsonAny as? [String: Any] {
+        for (key, value) in dictOfDicts {
+            guard let valueDict = value as? [String: Any] else { continue }
+            let fileNameFromValue: String? = (valueDict["fileName"] as? String) ?? (valueDict["filename"] as? String)
+            guard let fileName = fileNameFromValue else { continue }
+            let entry = PhotoIndexEntry(name: key, fileName: fileName)
+            parsedArray.append(entry)
+        }
+    }
+    return parsedArray
+}
+
 /*This means both PhotoImportService and PhotoBrowserView are only available on iOS 16.0 and later.
 If you tried to use them from a context that might run on earlier iOS versions, the compiler would require you
  guard the usage.
@@ -151,87 +175,13 @@ struct PhotoBrowserView: View {
     
     // ========== MODIFICATION 3: Main body is now conditional ==========
     var body: some View {
-        return Group {
-            
+        Group {
             if let folderURL = resolvedFolderURL, let indexURL = resolvedIndexURL {
-                // This is the original body, which now only runs *after*
-                // the URLs are resolved and permissions are granted.
-                NavigationSplitView {
-                    List(selection: $selected) {
-                        ForEach(entries) { entry in
-                            Text(entry.name)
-                                .lineLimit(1)
-                                .tag(entry)
-                        }
-                        .onDelete(perform: { offsets in
-                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
-                        })
-                    }
-                    .navigationTitle("Photos")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { dismiss() }
-                        }
-                    }
-                } detail: {
-                    Group {
-                        if let entry = selected {
-                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                            if let ui = UIImage(contentsOfFile: imgURL.path) {
-                                ScrollView {
-                                    Image(uiImage: ui)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .padding()
-                                }
-                                .navigationTitle(entry.name)
-                            } else {
-                                Text("Image not found").foregroundColor(.secondary)
-                            }
-                        } else {
-                            Text("Select a name").foregroundColor(.secondary)
-                        }
-                    }
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { dismiss() }
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            if selected != nil {
-                                Button(role: .destructive) {
-                                    showDeleteConfirm = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                    .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) {
-                            confirmDeletion(folderURL: folderURL, indexURL: indexURL)
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    } message: {
-                        Text("This will remove the image file and its entry from the index.")
-                    }
-                }
+                mainContent(folderURL: folderURL, indexURL: indexURL)
             } else if errorMessage != nil {
-                // Show an error if resolving/loading fails
-                VStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.red)
-                    Text(errorMessage ?? "Failed to load photos.")
-                        .font(.headline)
-                    Text("Please try re-selecting the folder from the 'Location' menu.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
+                errorView
             } else {
-                // Show a loading indicator
-                ProgressView("Accessing Folder...")
+                loadingView
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -244,6 +194,78 @@ struct PhotoBrowserView: View {
         .onDisappear(perform: stopAccess)
     }
     
+    private func mainContent(folderURL: URL, indexURL: URL) -> some View {
+        NavigationSplitView {
+            List(selection: $selected) {
+                ForEach(entries) { entry in
+                    Text(entry.name).tag(entry as PhotoIndexEntry?)
+                }
+                .onDelete { offsets in
+                    deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                }
+            }
+            .navigationTitle("Photos")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        } detail: {
+            Group {
+                if let entry = selected {
+                    Text(entry.name)
+                } else {
+                    Text("Select a name")
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if selected != nil {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    confirmDeletion(folderURL: folderURL, indexURL: indexURL)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will remove the image file and its entry from the index.")
+            }
+        }
+    }
+    
+    private var errorView: AnyView {
+        AnyView(
+            VStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.red)
+                Text(errorMessage ?? "Failed to load photos.")
+                    .font(.headline)
+                Text("Please try re-selecting the folder from the 'Location' menu.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+        )
+    }
+    
+    private var loadingView: AnyView {
+        AnyView(
+            ProgressView("Accessing Folder...")
+        )
+    }
+    
     private func resolveAndLoad() {
         var isStale = false
         do {
@@ -251,7 +273,7 @@ struct PhotoBrowserView: View {
             let url = try URL(resolvingBookmarkData: folderBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
             
             // 2. Start access for the FOLDER *first*
-            if !url.startAccessingSecurityScopedResource() {
+            guard url.startAccessingSecurityScopedResource() else {
                 print("[PhotoBrowserView] FAILED to gain security access for FOLDER: \(url.path)")
                 errorMessage = "[PhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the folder: \(url.path)"
                 print(errorMessage ?? "")
@@ -260,9 +282,9 @@ struct PhotoBrowserView: View {
             
             // 3. NOW create the "live" index URL
             let idx = url.appendingPathComponent("photo-index.json")
-
+            
             // 4. Start access for the FILE
-            if !idx.startAccessingSecurityScopedResource() {
+            guard idx.startAccessingSecurityScopedResource() else {
                 print("[PhotoBrowserView] FAILED to gain security access for FILE: \(idx.path)")
                 errorMessage = "[PhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(idx.path)"
                 print(errorMessage ?? "")
@@ -270,12 +292,12 @@ struct PhotoBrowserView: View {
                 return
             }
             
-            print("[PhotoBrowserView] Access granted for folder and index file")
+            // NOPRINTprint("[PhotoBrowserView] Access granted for folder and index file")
             
             // 5. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
             self.resolvedIndexURL = idx
-
+            
             // 6. Load the index
             Task { await loadIndex(folderURL: url, indexURL: idx) }
             
@@ -293,7 +315,13 @@ struct PhotoBrowserView: View {
     }
     
     private func deleteEntries(at offsets: IndexSet, folderURL: URL, indexURL: URL) {
-        let toDelete = offsets.compactMap { entries.indices.contains($0) ? entries[$0] : nil }
+        let toDelete = offsets.compactMap { index in
+            if entries.indices.contains(index) {
+                return entries[index]
+            } else {
+                return nil
+            }
+        }
         pendingDeleteEntries = toDelete
         showDeleteConfirm = true
     }
@@ -312,15 +340,22 @@ struct PhotoBrowserView: View {
             // Remove image files
             for entry in toDelete {
                 let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                if FileManager.default.fileExists(atPath: imgURL.path) {
-                    try FileManager.default.removeItem(at: imgURL)
+                if imgURL.startAccessingSecurityScopedResource() {
+                    defer { imgURL.stopAccessingSecurityScopedResource() }
+                    if FileManager.default.fileExists(atPath: imgURL.path) {
+                        try FileManager.default.removeItem(at: imgURL)
+                    }
+                } else {
+                    print("[PhotoBrowserView.delete] Failed to get access for image file: \(imgURL.path)")
                 }
             }
             
             // Update JSON index
             let all = try StorageManager.shared.loadPhotoIndex(from: indexURL)
-            let namesToDelete = Set(toDelete.map { $0.fileName })
-            let newIndex = all.filter { !namesToDelete.contains($0.fileName) }
+            let namesToDeleteSet: Set<String> = Set(toDelete.map { $0.fileName })
+            let newIndex = all.filter { entry in
+                !namesToDeleteSet.contains(entry.fileName)
+            }
             
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted]
@@ -328,7 +363,7 @@ struct PhotoBrowserView: View {
             try data.write(to: indexURL, options: .atomic)
             
             // Refresh UI
-            if let sel = selected, namesToDelete.contains(sel.fileName) {
+            if let sel = selected, namesToDeleteSet.contains(sel.fileName) {
                 selected = nil
             }
             Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
@@ -345,10 +380,22 @@ struct PhotoBrowserView: View {
     //============================================================
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
         do {
+            guard indexURL.startAccessingSecurityScopedResource() else {
+                errorMessage = "[PhotoBrowserView.loadIndex @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(indexURL.path)"
+                print(errorMessage ?? "")
+                return
+            }
+            defer {
+                indexURL.stopAccessingSecurityScopedResource()
+            }
+
             // First try the canonical loader
             do {
-                let arr = try StorageManager.shared.loadPhotoIndex(from: indexURL)
-                entries = arr.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                // FIX for unable to type-check closure (around line 146)
+                let arr: [PhotoIndexEntry] = try StorageManager.shared.loadPhotoIndex(from: indexURL)
+                var tmpArr = arr
+                tmpArr.sort(by: PhotoIndexEntry.compareByNameInsensitive)
+                entries = tmpArr
                 if hSizeClass == .regular, selected == nil { selected = entries.first }
                 print("[PhotoBrowserView] Loaded entries:", entries.count)
                 return
@@ -357,38 +404,20 @@ struct PhotoBrowserView: View {
             }
 
             // Fallback loader wrapped in async continuation and background queue
-            let parsed = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[PhotoIndexEntry], Error>) in
+            let parsed: [PhotoIndexEntry] = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[PhotoIndexEntry], Error>) in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        let data = try Data(contentsOf: indexURL)
-                        if data.isEmpty {
-                            continuation.resume(returning: [])
-                            return
-                        }
-                        let json = try JSONSerialization.jsonObject(with: data)
-                        var parsed: [PhotoIndexEntry] = []
-                        if let arr = json as? [[String: Any]] {
-                            parsed = arr.compactMap { dict in
-                                guard let name = dict["name"] as? String else { return nil }
-                                let fileName = (dict["fileName"] as? String) ?? (dict["filename"] as? String)
-                                guard let fileName else { return nil }
-                                return PhotoIndexEntry(name: name, fileName: fileName)
-                            }
-                        } else if let dict = json as? [String: Any] {
-                            parsed = dict.compactMap { (key, value) in
-                                guard let v = value as? [String: Any] else { return nil }
-                                let fileName = (v["fileName"] as? String) ?? (v["filename"] as? String)
-                                guard let fileName else { return nil }
-                                return PhotoIndexEntry(name: key, fileName: fileName)
-                            }
-                        }
-                        continuation.resume(returning: parsed)
+                        let data: Data = try Data(contentsOf: indexURL)
+                        let parsedArray: [PhotoIndexEntry] = try parsePhotoIndexEntries(from: data)
+                        continuation.resume(returning: parsedArray)
                     } catch {
                         continuation.resume(throwing: error)
                     }
                 }
             }
-            entries = parsed.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            var tmpParsed = parsed
+            tmpParsed.sort(by: PhotoIndexEntry.compareByNameInsensitive)
+            entries = tmpParsed
             if hSizeClass == .regular, selected == nil { selected = entries.first }
             print("[PhotoBrowserView] Loaded entries:", entries.count)
             return
@@ -424,86 +453,13 @@ struct FilteredPhotoBrowserView: View {
     
     // ========== MODIFICATION 3: Main body is now conditional ==========
     var body: some View {
-        return Group {
+        Group {
             if let folderURL = resolvedFolderURL, let indexURL = resolvedIndexURL {
-                // This is the original body, which now only runs *after*
-                // the URLs are resolved and permissions are granted.
-                NavigationSplitView {
-                    List(selection: $selected) {
-                        ForEach(entries) { entry in
-                            Text(entry.name)
-                                .lineLimit(1)
-                                .tag(entry)
-                        }
-                        .onDelete(perform: { offsets in
-                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
-                        })
-                    }
-                    .navigationTitle("Tree Photos")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { dismiss() }
-                        }
-                    }
-                } detail: {
-                    Group {
-                        if let entry = selected {
-                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                            if let ui = UIImage(contentsOfFile: imgURL.path) {
-                                ScrollView {
-                                    Image(uiImage: ui)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .padding()
-                                }
-                                .navigationTitle(entry.name)
-                            } else {
-                                Text("Image not found").foregroundColor(.secondary)
-                            }
-                        } else {
-                            Text("Select a name").foregroundColor(.secondary)
-                        }
-                    }
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { dismiss() }
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            if selected != nil {
-                                Button(role: .destructive) {
-                                    showDeleteConfirm = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                    .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) {
-                            confirmDeletion(folderURL: folderURL, indexURL: indexURL)
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    } message: {
-                        Text("This will remove the image file and its entry from the index.")
-                    }
-                }
+                mainContent(folderURL: folderURL, indexURL: indexURL)
             } else if errorMessage != nil {
-                // Show an error if resolving/loading fails
-                VStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.red)
-                    Text(errorMessage ?? "Failed to load photos.")
-                        .font(.headline)
-                    Text("Please try re-selecting the folder from the 'Location' menu.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
+                errorView
             } else {
-                // Show a loading indicator
-                ProgressView("Accessing Folder...")
+                loadingView
             }
         }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -516,6 +472,78 @@ struct FilteredPhotoBrowserView: View {
         .onDisappear(perform: stopAccess)
     }
     
+    private func mainContent(folderURL: URL, indexURL: URL) -> some View {
+        NavigationSplitView {
+            List(selection: $selected) {
+                ForEach(entries) { entry in
+                    Text(entry.name).tag(entry as PhotoIndexEntry?)
+                }
+                .onDelete { offsets in
+                    deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                }
+            }
+            .navigationTitle("Tree Photos")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        } detail: {
+            Group {
+                if let entry = selected {
+                    Text(entry.name)
+                } else {
+                    Text("Select a name")
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if selected != nil {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    confirmDeletion(folderURL: folderURL, indexURL: indexURL)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will remove the image file and its entry from the index.")
+            }
+        }
+    }
+    
+    private var errorView: AnyView {
+        AnyView(
+            VStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.red)
+                Text(errorMessage ?? "Failed to load photos.")
+                    .font(.headline)
+                Text("Please try re-selecting the folder from the 'Location' menu.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+        )
+    }
+    
+    private var loadingView: AnyView {
+        AnyView(
+            ProgressView("Accessing Folder...")
+        )
+    }
+
     private func resolveAndLoad() {
         var isStale = false
         do {
@@ -523,7 +551,7 @@ struct FilteredPhotoBrowserView: View {
             let url = try URL(resolvingBookmarkData: folderBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
             
             // 2. Start access for the FOLDER *first*
-            if !url.startAccessingSecurityScopedResource() {
+            guard url.startAccessingSecurityScopedResource() else {
                 print("[FilteredPhotoBrowserView] FAILED to gain security access for FOLDER: \(url.path)")
                 errorMessage = "[FilteredPhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the folder: \(url.path)"
                 print(errorMessage ?? "")
@@ -534,7 +562,7 @@ struct FilteredPhotoBrowserView: View {
             let idx = url.appendingPathComponent("photo-index.json")
 
             // 4. Start access for the FILE
-            if !idx.startAccessingSecurityScopedResource() {
+            guard idx.startAccessingSecurityScopedResource() else {
                 print("[FilteredPhotoBrowserView] FAILED to gain security access for FILE: \(idx.path)")
                 errorMessage = "[FilteredPhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(idx.path)"
                 print(errorMessage ?? "")
@@ -542,7 +570,7 @@ struct FilteredPhotoBrowserView: View {
                 return
             }
             
-            print("[FilteredPhotoBrowserView] Access granted for folder and index file")
+            // NOPRINTprint("[FilteredPhotoBrowserView] Access granted for folder and index file")
             
             // 5. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
@@ -566,7 +594,13 @@ struct FilteredPhotoBrowserView: View {
 
     
     private func deleteEntries(at offsets: IndexSet, folderURL: URL, indexURL: URL) {
-        let toDelete = offsets.compactMap { entries.indices.contains($0) ? entries[$0] : nil }
+        let toDelete = offsets.compactMap { index in
+            if entries.indices.contains(index) {
+                return entries[index]
+            } else {
+                return nil
+            }
+        }
         pendingDeleteEntries = toDelete
         showDeleteConfirm = true
     }
@@ -585,15 +619,22 @@ struct FilteredPhotoBrowserView: View {
             // Remove image files
             for entry in toDelete {
                 let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                if FileManager.default.fileExists(atPath: imgURL.path) {
-                    try FileManager.default.removeItem(at: imgURL)
+                if imgURL.startAccessingSecurityScopedResource() {
+                    defer { imgURL.stopAccessingSecurityScopedResource() }
+                    if FileManager.default.fileExists(atPath: imgURL.path) {
+                        try FileManager.default.removeItem(at: imgURL)
+                    }
+                } else {
+                    print("[FilteredPhotoBrowserView.delete] Failed to get access for image file: \(imgURL.path)")
                 }
             }
             
             // Update JSON index
             let all = try StorageManager.shared.loadPhotoIndex(from: indexURL)
-            let namesToDelete = Set(toDelete.map { $0.fileName })
-            let newIndex = all.filter { !namesToDelete.contains($0.fileName) }
+            let namesToDeleteSet: Set<String> = Set(toDelete.map { $0.fileName })
+            let newIndex = all.filter { entry in
+                !namesToDeleteSet.contains(entry.fileName)
+            }
             
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted]
@@ -601,7 +642,7 @@ struct FilteredPhotoBrowserView: View {
             try data.write(to: indexURL, options: .atomic)
             
             // Refresh UI (with filtering)
-            if let sel = selected, namesToDelete.contains(sel.fileName) {
+            if let sel = selected, namesToDeleteSet.contains(sel.fileName) {
                 selected = nil
             }
             Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
@@ -617,11 +658,26 @@ struct FilteredPhotoBrowserView: View {
     
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
         do {
+            guard indexURL.startAccessingSecurityScopedResource() else {
+                errorMessage = "[FilteredPhotoBrowserView.loadIndex @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(indexURL.path)"
+                print(errorMessage ?? "")
+                return
+            }
+            defer {
+                indexURL.stopAccessingSecurityScopedResource()
+            }
+            
             // First try the canonical loader
             do {
                 let all = try StorageManager.shared.loadPhotoIndex(from: indexURL)
-                let filtered = all.filter { filterSet.contains($0.name.lowercased()) }
-                entries = filtered.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                
+                // Break filtering and sorting into steps for better type-checking (fix at line 460)
+                let filtered: [PhotoIndexEntry] = all.filter { entry in
+                    filterSet.contains(entry.name.lowercased())
+                }
+                var tmpFiltered = filtered
+                tmpFiltered.sort(by: PhotoIndexEntry.compareByNameInsensitive)
+                entries = tmpFiltered
                 if hSizeClass == .regular {
                     selected = entries.first
                 } else {
@@ -634,44 +690,25 @@ struct FilteredPhotoBrowserView: View {
             }
 
             // Fallback loader wrapped in async continuation and background queue
-            let parsed = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[PhotoIndexEntry], Error>) in
+            let parsed: [PhotoIndexEntry] = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[PhotoIndexEntry], Error>) in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
                         let data = try Data(contentsOf: indexURL)
-                        if data.isEmpty {
-                            continuation.resume(returning: [])
-                            return
-                        }
-                        
-                        let json = try JSONSerialization.jsonObject(with: data)
-                        var parsed: [PhotoIndexEntry] = []
-                        
-                        if let arr = json as? [[String: Any]] {
-                            parsed = arr.compactMap { dict in
-                                guard let name = dict["name"] as? String else { return nil }
-                                let fileName = (dict["fileName"]as? String) ?? (dict["filename"] as? String)
-                                guard let fileName else { return nil }
-                                return PhotoIndexEntry(name: name, fileName: fileName)
-                            }
-                        } else if let dict = json as? [String: Any] {
-                            parsed = dict.compactMap { (key, value) in
-                                guard let v = value as? [String: Any] else { return nil }
-                                let fileName = (v["fileName"] as? String) ?? (v["filename"] as? String)
-                                guard let fileName else { return nil }
-                                return PhotoIndexEntry(name: key, fileName: fileName)
-                            }
-                        }
-                        
-                        continuation.resume(returning: parsed)
+                        let parsedArray: [PhotoIndexEntry] = try parsePhotoIndexEntries(from: data)
+                        continuation.resume(returning: parsedArray)
                     } catch {
                         continuation.resume(throwing: error)
                     }
                 }
             }
             
-            // Apply filtering and update on main actor (self)
-            let filtered = parsed.filter { filterSet.contains($0.name.lowercased()) }
-            entries = filtered.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            let filtered: [PhotoIndexEntry] = parsed.filter { entry in
+                filterSet.contains(entry.name.lowercased())
+            }
+            var tmpFiltered = filtered
+            tmpFiltered.sort(by: PhotoIndexEntry.compareByNameInsensitive)
+            entries = tmpFiltered
+            
             if hSizeClass == .regular {
                 selected = entries.first
             } else {
