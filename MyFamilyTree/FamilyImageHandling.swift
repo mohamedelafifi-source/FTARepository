@@ -9,6 +9,59 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
+// MARK: - ZoomableImageView Component
+@available(iOS 16.0, *)
+struct ZoomableImageView: View {
+    let uiImage: UIImage
+    
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    
+    var body: some View {
+        Image(uiImage: uiImage)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .scaleEffect(scale)
+            .offset(offset)
+            .gesture(
+                SimultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            let delta = value / lastScale
+                            lastScale = value
+                            scale *= delta
+                            scale = min(max(scale, 1.0), 5.0)
+                        }
+                        .onEnded { _ in
+                            lastScale = 1.0
+                            if scale < 1.0 {
+                                scale = 1.0
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        },
+                    DragGesture()
+                        .onChanged { value in
+                            let newOffset = CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height)
+                            offset = newOffset
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(.easeInOut) {
+                    scale = 1.0
+                    offset = .zero
+                    lastOffset = .zero
+                }
+            }
+    }
+}
+
 // MARK: - Image & Photo Handling (Single Source of Truth)
 // All photo-related models and utilities live here.
 
@@ -219,30 +272,34 @@ struct PhotoBrowserView: View {
                     }
                     .sheet(isPresented: $showingDetailSheet) {
                         if let entry = sheetEntry {
-                            VStack {
-                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(maxHeight: 350)
-                                        .cornerRadius(12)
-                                        .shadow(radius: 8)
-                                    Text(entry.name)
-                                        .font(.headline)
-                                } else {
-                                    Image(systemName: "photo")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 120, height: 120)
-                                        .foregroundColor(.gray)
-                                    Text("(Image not found)")
-                                        .font(.caption)
-                                    Text(entry.name)
-                                        .font(.headline)
+                            NavigationStack {
+                                VStack {
+                                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                    if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                                        ZoomableImageView(uiImage: uiImage)
+                                        Text(entry.name)
+                                            .font(.headline)
+                                    } else {
+                                        Image(systemName: "photo")
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 120, height: 120)
+                                            .foregroundColor(.gray)
+                                        Text("(Image not found)")
+                                            .font(.caption)
+                                        Text(entry.name)
+                                            .font(.headline)
+                                    }
+                                }
+                                .padding()
+                                .navigationTitle(entry.name)
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        Button("Exit") { showingDetailSheet = false }
+                                    }
                                 }
                             }
-                            .padding()
                         }
                     }
                 } else {
@@ -561,30 +618,34 @@ struct FilteredPhotoBrowserView: View {
                     }
                     .sheet(isPresented: $showingDetailSheet) {
                         if let entry = sheetEntry {
-                            VStack {
-                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(maxHeight: 350)
-                                        .cornerRadius(12)
-                                        .shadow(radius: 8)
-                                    Text(entry.name)
-                                        .font(.headline)
-                                } else {
-                                    Image(systemName: "photo")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 120, height: 120)
-                                        .foregroundColor(.gray)
-                                    Text("(Image not found)")
-                                        .font(.caption)
-                                    Text(entry.name)
-                                        .font(.headline)
+                            NavigationStack {
+                                VStack {
+                                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                    if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                                        ZoomableImageView(uiImage: uiImage)
+                                        Text(entry.name)
+                                            .font(.headline)
+                                    } else {
+                                        Image(systemName: "photo")
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 120, height: 120)
+                                            .foregroundColor(.gray)
+                                        Text("(Image not found)")
+                                            .font(.caption)
+                                        Text(entry.name)
+                                            .font(.headline)
+                                    }
+                                }
+                                .padding()
+                                .navigationTitle(entry.name)
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        Button("Exit") { showingDetailSheet = false }
+                                    }
                                 }
                             }
-                            .padding()
                         }
                     }
                 } else {
