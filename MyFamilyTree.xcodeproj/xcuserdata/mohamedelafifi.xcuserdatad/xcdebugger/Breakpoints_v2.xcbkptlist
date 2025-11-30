@@ -189,6 +189,15 @@
             continueAfterRunningActions = "No"
             symbolName = "*0x102c74b6c">
             <Locations>
+               <Location
+                  uuid = "AF8A9397-3F31-4D35-8691-1B957268DA46 - 889997a0547b28fb"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "*0x102c74b6c"
+                  moduleName = "dyld"
+                  usesParentBreakpointCondition = "Yes">
+               </Location>
             </Locations>
          </BreakpointContent>
       </BreakpointProxy>

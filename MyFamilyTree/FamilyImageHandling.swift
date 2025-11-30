@@ -283,22 +283,15 @@ struct PhotoBrowserView: View {
             // 3. NOW create the "live" index URL
             let idx = url.appendingPathComponent("photo-index.json")
             
-            // 4. Start access for the FILE
-            guard idx.startAccessingSecurityScopedResource() else {
-                print("[PhotoBrowserView] FAILED to gain security access for FILE: \(idx.path)")
-                errorMessage = "[PhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(idx.path)"
-                print(errorMessage ?? "")
-                url.stopAccessingSecurityScopedResource() // Stop folder access
-                return
-            }
+            // Removed startAccessingSecurityScopedResource() on index file
             
             // NOPRINTprint("[PhotoBrowserView] Access granted for folder and index file")
             
-            // 5. SUCCESS: Set the state variables
+            // 4. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
             self.resolvedIndexURL = idx
             
-            // 6. Load the index
+            // 5. Load the index
             Task { await loadIndex(folderURL: url, indexURL: idx) }
             
         } catch {
@@ -309,7 +302,7 @@ struct PhotoBrowserView: View {
     }
     
     private func stopAccess() {
-        resolvedIndexURL?.stopAccessingSecurityScopedResource()
+        // Removed stopAccessingSecurityScopedResource() on indexURL
         resolvedFolderURL?.stopAccessingSecurityScopedResource()
         print("[PhotoBrowserView] Stopped security access.")
     }
@@ -380,15 +373,8 @@ struct PhotoBrowserView: View {
     //============================================================
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
         do {
-            guard indexURL.startAccessingSecurityScopedResource() else {
-                errorMessage = "[PhotoBrowserView.loadIndex @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(indexURL.path)"
-                print(errorMessage ?? "")
-                return
-            }
-            defer {
-                indexURL.stopAccessingSecurityScopedResource()
-            }
-
+            // Removed startAccessingSecurityScopedResource() on indexURL
+            
             // First try the canonical loader
             do {
                 // FIX for unable to type-check closure (around line 146)
@@ -561,22 +547,15 @@ struct FilteredPhotoBrowserView: View {
             // 3. NOW create the "live" index URL
             let idx = url.appendingPathComponent("photo-index.json")
 
-            // 4. Start access for the FILE
-            guard idx.startAccessingSecurityScopedResource() else {
-                print("[FilteredPhotoBrowserView] FAILED to gain security access for FILE: \(idx.path)")
-                errorMessage = "[FilteredPhotoBrowserView.resolveAndLoad @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(idx.path)"
-                print(errorMessage ?? "")
-                url.stopAccessingSecurityScopedResource() // Stop folder access
-                return
-            }
+            // Removed startAccessingSecurityScopedResource() on index file
             
             // NOPRINTprint("[FilteredPhotoBrowserView] Access granted for folder and index file")
             
-            // 5. SUCCESS: Set the state variables
+            // 4. SUCCESS: Set the state variables
             self.resolvedFolderURL = url
             self.resolvedIndexURL = idx
 
-            // 6. Load the index
+            // 5. Load the index
             Task { await loadIndex(folderURL: url, indexURL: idx) }
             
         } catch {
@@ -587,7 +566,7 @@ struct FilteredPhotoBrowserView: View {
     }
     
     private func stopAccess() {
-        resolvedIndexURL?.stopAccessingSecurityScopedResource()
+        // Removed stopAccessingSecurityScopedResource() on indexURL
         resolvedFolderURL?.stopAccessingSecurityScopedResource()
         print("[FilteredPhotoBrowserView] Stopped security access.")
     }
@@ -658,14 +637,7 @@ struct FilteredPhotoBrowserView: View {
     
     @MainActor private func loadIndex(folderURL: URL, indexURL: URL) async {
         do {
-            guard indexURL.startAccessingSecurityScopedResource() else {
-                errorMessage = "[FilteredPhotoBrowserView.loadIndex @\(#fileID):\(#line)] Could not get permission to read the photo index file: \(indexURL.path)"
-                print(errorMessage ?? "")
-                return
-            }
-            defer {
-                indexURL.stopAccessingSecurityScopedResource()
-            }
+            // Removed startAccessingSecurityScopedResource() on indexURL
             
             // First try the canonical loader
             do {
