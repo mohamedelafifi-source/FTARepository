@@ -173,6 +173,10 @@ struct PhotoBrowserView: View {
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
     @Environment(\.horizontalSizeClass) private var hSizeClass
     
+    // ========== MODIFICATION 2b: New @State for sheet presentation ==========
+    @State private var showingDetailSheet = false
+    @State private var sheetEntry: PhotoIndexEntry?
+    
     // ========== MODIFICATION 3: Main body is now conditional ==========
     var body: some View {
         Group {
@@ -196,12 +200,60 @@ struct PhotoBrowserView: View {
     
     private func mainContent(folderURL: URL, indexURL: URL) -> some View {
         NavigationSplitView {
-            List(selection: $selected) {
-                ForEach(entries) { entry in
-                    Text(entry.name).tag(entry as PhotoIndexEntry?)
-                }
-                .onDelete { offsets in
-                    deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+            // Modified List for compact vs regular horizontalSizeClass
+            Group {
+                if hSizeClass == .compact {
+                    List {
+                        ForEach(entries) { entry in
+                            Button {
+                                sheetEntry = entry
+                                showingDetailSheet = true
+                            } label: {
+                                Text(entry.name)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                        }
+                    }
+                    .sheet(isPresented: $showingDetailSheet) {
+                        if let entry = sheetEntry {
+                            VStack {
+                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(maxHeight: 350)
+                                        .cornerRadius(12)
+                                        .shadow(radius: 8)
+                                    Text(entry.name)
+                                        .font(.headline)
+                                } else {
+                                    Image(systemName: "photo")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 120, height: 120)
+                                        .foregroundColor(.gray)
+                                    Text("(Image not found)")
+                                        .font(.caption)
+                                    Text(entry.name)
+                                        .font(.headline)
+                                }
+                            }
+                            .padding()
+                        }
+                    }
+                } else {
+                    List(selection: $selected) {
+                        ForEach(entries) { entry in
+                            Text(entry.name).tag(entry as PhotoIndexEntry?)
+                        }
+                        .onDelete { offsets in
+                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                        }
+                    }
                 }
             }
             .navigationTitle("Photos")
@@ -213,7 +265,33 @@ struct PhotoBrowserView: View {
         } detail: {
             Group {
                 if let entry = selected {
-                    Text(entry.name)
+                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                    if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                        VStack {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 300)
+                                .cornerRadius(12)
+                                .shadow(radius: 8)
+                            Text(entry.name)
+                                .font(.headline)
+                        }
+                        .padding()
+                    } else {
+                        VStack {
+                            Image(systemName: "photo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 120, height: 120)
+                                .foregroundColor(.gray)
+                            Text("(Image not found)")
+                                .font(.caption)
+                            Text(entry.name)
+                                .font(.headline)
+                        }
+                        .padding()
+                    }
                 } else {
                     Text("Select a name")
                 }
@@ -432,7 +510,11 @@ struct FilteredPhotoBrowserView: View {
     @State private var errorMessage: String?
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
     @Environment(\.horizontalSizeClass) private var hSizeClass
-    
+
+    // ========== MODIFICATION 2b: New @State for sheet presentation ==========
+    @State private var showingDetailSheet = false
+    @State private var sheetEntry: PhotoIndexEntry?
+
     private var filterSet: Set<String> {
         Set(filterNames.map { $0.lowercased() })
     }
@@ -460,12 +542,60 @@ struct FilteredPhotoBrowserView: View {
     
     private func mainContent(folderURL: URL, indexURL: URL) -> some View {
         NavigationSplitView {
-            List(selection: $selected) {
-                ForEach(entries) { entry in
-                    Text(entry.name).tag(entry as PhotoIndexEntry?)
-                }
-                .onDelete { offsets in
-                    deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+            // Modified List for compact vs regular horizontalSizeClass
+            Group {
+                if hSizeClass == .compact {
+                    List {
+                        ForEach(entries) { entry in
+                            Button {
+                                sheetEntry = entry
+                                showingDetailSheet = true
+                            } label: {
+                                Text(entry.name)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                        }
+                    }
+                    .sheet(isPresented: $showingDetailSheet) {
+                        if let entry = sheetEntry {
+                            VStack {
+                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(maxHeight: 350)
+                                        .cornerRadius(12)
+                                        .shadow(radius: 8)
+                                    Text(entry.name)
+                                        .font(.headline)
+                                } else {
+                                    Image(systemName: "photo")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 120, height: 120)
+                                        .foregroundColor(.gray)
+                                    Text("(Image not found)")
+                                        .font(.caption)
+                                    Text(entry.name)
+                                        .font(.headline)
+                                }
+                            }
+                            .padding()
+                        }
+                    }
+                } else {
+                    List(selection: $selected) {
+                        ForEach(entries) { entry in
+                            Text(entry.name).tag(entry as PhotoIndexEntry?)
+                        }
+                        .onDelete { offsets in
+                            deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
+                        }
+                    }
                 }
             }
             .navigationTitle("Tree Photos")
@@ -477,7 +607,33 @@ struct FilteredPhotoBrowserView: View {
         } detail: {
             Group {
                 if let entry = selected {
-                    Text(entry.name)
+                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                    if let data = try? Data(contentsOf: imgURL), let uiImage = UIImage(data: data) {
+                        VStack {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 300)
+                                .cornerRadius(12)
+                                .shadow(radius: 8)
+                            Text(entry.name)
+                                .font(.headline)
+                        }
+                        .padding()
+                    } else {
+                        VStack {
+                            Image(systemName: "photo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 120, height: 120)
+                                .foregroundColor(.gray)
+                            Text("(Image not found)")
+                                .font(.caption)
+                            Text(entry.name)
+                                .font(.headline)
+                        }
+                        .padding()
+                    }
                 } else {
                     Text("Select a name")
                 }
