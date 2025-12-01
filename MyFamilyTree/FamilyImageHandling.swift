@@ -341,14 +341,6 @@ struct PhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
-                    .onChange(of: selected) { newValue in
-                        if let entry = newValue {
-                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                            currentImage = loadImage(from: imgURL, folderURL: folderURL)
-                        } else {
-                            currentImage = nil
-                        }
-                    }
                 }
             }
             .navigationTitle("Photos")
@@ -373,13 +365,15 @@ struct PhotoBrowserView: View {
                         .padding()
                     } else {
                         ProgressView("Loading...")
-                            .onAppear {
-                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                currentImage = loadImage(from: imgURL, folderURL: folderURL)
-                            }
                     }
                 } else {
                     Text("Select a name")
+                }
+            }
+            .task(id: selected) {
+                if let entry = selected {
+                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                    currentImage = loadImage(from: imgURL, folderURL: folderURL)
                 }
             }
             .toolbar {
@@ -633,14 +627,6 @@ struct FilteredPhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
-                    .onChange(of: selected) { newValue in
-                        if let entry = newValue {
-                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                            currentImage = loadImage(from: imgURL, folderURL: folderURL)
-                        } else {
-                            currentImage = nil
-                        }
-                    }
                 }
             }
             .navigationTitle("Tree Photos")
@@ -665,13 +651,15 @@ struct FilteredPhotoBrowserView: View {
                         .padding()
                     } else {
                         ProgressView("Loading...")
-                            .onAppear {
-                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                currentImage = loadImage(from: imgURL, folderURL: folderURL)
-                            }
                     }
                 } else {
                     Text("Select a name")
+                }
+            }
+            .task(id: selected) {
+                if let entry = selected {
+                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                    currentImage = loadImage(from: imgURL, folderURL: folderURL)
                 }
             }
             .toolbar {
