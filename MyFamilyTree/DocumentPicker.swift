@@ -20,13 +20,16 @@ struct JSONFileChooserView: View {
     @State private var folderURL: URL? = nil
     @State private var jsonFiles: [URL] = []
     @State private var errorMessage: String? = nil
+    @State private var isFolderAccessActive = false
 
     var body: some View {
         Group {
             if let folderURL = folderURL {
                 if !jsonFiles.isEmpty {
                     List(jsonFiles, id: \.self) { url in
-                        Button(action: { onPickJSON(url) }) {
+                        Button(action: {
+                            handleJSONFilePick(url, folderURL: folderURL)
+                        }) {
                             HStack {
                                 Image(systemName: "doc.text")
                                 Text(url.lastPathComponent)
@@ -71,16 +74,73 @@ struct JSONFileChooserView: View {
         }
         .onAppear {
             if folderURL == nil, let globalFolder = GlobalVariables.shared.selectedFolderURL {
-                let _ = globalFolder.startAccessingSecurityScopedResource()
-                folderURL = globalFolder
-                loadJSONFiles(in: globalFolder)
+                if globalFolder.startAccessingSecurityScopedResource() {
+                    isFolderAccessActive = true
+                    folderURL = globalFolder
+                    loadJSONFiles(in: globalFolder)
+                    print("[JSONFileChooserView] Started folder access for: \(globalFolder.path)")
+                } else {
+                    errorMessage = "Failed to access selected folder"
+                }
             }
+        }
+        .onDisappear {
+            // Stop folder access when view disappears
+            if isFolderAccessActive, let folderURL = folderURL {
+                folderURL.stopAccessingSecurityScopedResource()
+                isFolderAccessActive = false
+                print("[JSONFileChooserView] Stopped folder access")
+            }
+        }
+    }
+
+    private func handleJSONFilePick(_ fileURL: URL, folderURL: URL) {
+        print("[JSONFileChooserView] Attempting to pick file: \(fileURL.lastPathComponent)")
+        
+        // The file is inside the folder we already have access to
+        // But on device, we need to ensure the file itself has proper access
+        
+        // Check if we can read the file
+        guard FileManager.default.isReadableFile(atPath: fileURL.path) else {
+            print("[JSONFileChooserView] File is not readable: \(fileURL.path)")
+            errorMessage = "Cannot read file: \(fileURL.lastPathComponent)"
+            return
+        }
+        
+        // Create a security-scoped bookmark for this specific file
+        do {
+            // Start accessing the file
+            let fileAccessStarted = fileURL.startAccessingSecurityScopedResource()
+            print("[JSONFileChooserView] File access started: \(fileAccessStarted)")
+            
+            // Create bookmark for the file
+            let bookmark = try fileURL.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            
+            // Store the bookmark temporarily (you can store this in UserDefaults if needed)
+            print("[JSONFileChooserView] Created bookmark for file, size: \(bookmark.count) bytes")
+            
+            // Pass the URL to the callback
+            // The caller MUST call stopAccessingSecurityScopedResource when done
+            onPickJSON(fileURL)
+            
+            // Note: We don't stop accessing here because the caller needs to read the file
+            // The caller is responsible for calling fileURL.stopAccessingSecurityScopedResource()
+            
+        } catch {
+            print("[JSONFileChooserView] Error creating bookmark: \(error.localizedDescription)")
+            errorMessage = "Failed to access file: \(error.localizedDescription)"
         }
     }
 
     private func loadJSONFiles(in folder: URL) {
         errorMessage = nil
         jsonFiles.removeAll()
+        
+        print("[JSONFileChooserView] Loading JSON files from: \(folder.path)")
 
         do {
             // Enumerate non-recursively; change options if you want to include subfolders
@@ -104,6 +164,8 @@ struct JSONFileChooserView: View {
                 // Sort by name for stable display
                 results.sort { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
                 self.jsonFiles = results
+                
+                print("[JSONFileChooserView] Found \(results.count) JSON files")
 
                 if results.isEmpty {
                     self.errorMessage = "No JSON files found in this folder."
@@ -112,6 +174,7 @@ struct JSONFileChooserView: View {
                 self.errorMessage = "Failed to read folder: Enumerator unavailable."
             }
         } catch {
+            print("[JSONFileChooserView] Error loading files: \(error.localizedDescription)")
             self.errorMessage = "Failed to read folder: \(error.localizedDescription)"
         }
     }
@@ -157,7 +220,8 @@ struct DocumentPicker: UIViewControllerRepresentable {
             // Start security-scoped access for each picked URL
             var accessibleURLs: [URL] = []
             for url in urls {
-                let _ = url.startAccessingSecurityScopedResource()
+                let started = url.startAccessingSecurityScopedResource()
+                print("[DocumentPicker] Started access for: \(url.lastPathComponent), success: \(started)")
                 accessibleURLs.append(url)
             }
             parent.onPick(accessibleURLs)
@@ -167,4 +231,3 @@ struct DocumentPicker: UIViewControllerRepresentable {
         }
     }
 }
-

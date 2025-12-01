@@ -136,9 +136,9 @@ struct FileHandlingView: View {
             guard let action = self.importAction else { return }
             switch action {
             case .load:
-                processImportedFile(result, isAppending: false)
+                processImportedFile(result, isAppending: false, accessAlreadyStarted: false)
             case .append:
-                processImportedFile(result, isAppending: true)
+                processImportedFile(result, isAppending: true, accessAlreadyStarted: false)
             }
             self.importAction = nil
         }
@@ -158,16 +158,15 @@ struct FileHandlingView: View {
                     isImporting = true
                 case .importLoad:
                     if let url = preselectedURL {
-                        // Load immediately without showing a picker
-                        processImportedFile(.success(url), isAppending: false)
+                        // The URL already has security access started from JSONFileChooserView
+                        processImportedFile(.success(url), isAppending: false, accessAlreadyStarted: true)
                     } else {
-                        // No preselected URL; do nothing (ContentView should provide it)
-                        break
+                        // No preselected URL; show the file importer instead
+                        importAction = .load
+                        isImporting = true
                     }
                 }
             }
-        }
-        .onDisappear {
         }
     }
     
@@ -213,7 +212,7 @@ struct FileHandlingView: View {
         }
     }
     
-    private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool) {
+    private func processImportedFile(_ result: Result<URL, Error>, isAppending: Bool, accessAlreadyStarted: Bool = false) {
         switch result {
         case .success(let originalURL):
             guard let url = resolveBookmarkIfNeeded(for: originalURL) else {
@@ -221,22 +220,31 @@ struct FileHandlingView: View {
                 showingAlert = true
                 return
             }
-            let started = url.startAccessingSecurityScopedResource()
+            
+            // Only start access if it hasn't been started already
+            var started = accessAlreadyStarted
+            if !accessAlreadyStarted {
+                started = url.startAccessingSecurityScopedResource()
+            }
+            
             guard started else {
                 alertMessage = "Access to the selected file was denied."
                 showingAlert = true
                 return
-            }
-            defer {
-                url.stopAccessingSecurityScopedResource()
             }
             
             // Ensure the file is local if it's an iCloud item
             Task {
                 let available = await ensureLocalFile(at: url, timeout: 30)
                 if !available {
-                    alertMessage = "The selected file is not available offline yet. Please try again after it finishes downloading."
-                    showingAlert = true
+                    // Stop access before returning
+                    if accessAlreadyStarted {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                    DispatchQueue.main.async {
+                        alertMessage = "The selected file is not available offline yet. Please try again after it finishes downloading."
+                        showingAlert = true
+                    }
                     return
                 }
 
@@ -244,6 +252,7 @@ struct FileHandlingView: View {
                     let data = try await Task.detached(priority: .utility) { () -> Data in
                         return try Data(contentsOf: url)
                     }.value
+                    
                     let decoder = JSONDecoder()
                     let importedMembers = try decoder.decode([FamilyMember].self, from: data)
                     let count = importedMembers.count
@@ -251,7 +260,9 @@ struct FileHandlingView: View {
                     DispatchQueue.main.async {
                         if isAppending {
                             var currentByID: [UUID: FamilyMember] = [:]
-                            for existing in manager.membersDictionary.values { currentByID[existing.id] = existing }
+                            for existing in manager.membersDictionary.values {
+                                currentByID[existing.id] = existing
+                            }
                             for member in importedMembers {
                                 if var existing = currentByID[member.id] {
                                     existing.parents = Array(Set(existing.parents).union(member.parents)).sorted()
@@ -265,26 +276,45 @@ struct FileHandlingView: View {
                                 }
                             }
                             manager.membersDictionary.removeAll()
-                            for m in currentByID.values { manager.membersDictionary[m.name] = m }
+                            for m in currentByID.values {
+                                manager.membersDictionary[m.name] = m
+                            }
                             alertMessage = "Successfully appended \(count) member(s)."
                         } else {
                             var byID: [UUID: FamilyMember] = [:]
-                            for m in importedMembers { byID[m.id] = m }
+                            for m in importedMembers {
+                                byID[m.id] = m
+                            }
                             manager.membersDictionary.removeAll()
-                            for m in byID.values { manager.membersDictionary[m.name] = m }
+                            for m in byID.values {
+                                manager.membersDictionary[m.name] = m
+                            }
                             alertMessage = "Successfully loaded \(count) member(s)."
                         }
                         manager.isDirty = false
                         manager.focusedMemberId = nil
                         showingAlert = true
+                        
+                        // Stop access here if we started it from the file chooser
+                        if accessAlreadyStarted {
+                            url.stopAccessingSecurityScopedResource()
+                            print("[FileHandling] Stopped security access after loading")
+                        }
                     }
                 } catch {
                     print("DEBUG processImportedFile: ERROR", error.localizedDescription)
-                    alertMessage = "Error processing file: \(error.localizedDescription)"
-                    showingAlert = true
+                    DispatchQueue.main.async {
+                        alertMessage = "Error processing file: \(error.localizedDescription)"
+                        showingAlert = true
+                        
+                        // Stop access on error too
+                        if accessAlreadyStarted {
+                            url.stopAccessingSecurityScopedResource()
+                            print("[FileHandling] Stopped security access after error")
+                        }
+                    }
                 }
             }
-            return
             
         case .failure(let error):
             alertMessage = "Error selecting file: \(error.localizedDescription)"
@@ -292,4 +322,3 @@ struct FileHandlingView: View {
         }
     }
 }
-
