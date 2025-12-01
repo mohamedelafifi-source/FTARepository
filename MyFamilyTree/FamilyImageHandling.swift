@@ -202,14 +202,21 @@ private func resolveBookmarkSynchronously(data: Data) -> AccessResult {
             bookmarkDataIsStale: &isStale
         )
         
+        print("[resolveBookmark] Resolved URL: \(resolvedURL.path)")
+        print("[resolveBookmark] Is stale: \(isStale)")
+        
         guard resolvedURL.startAccessingSecurityScopedResource() else {
+            print("[resolveBookmark] FAILED to start accessing security scoped resource")
             return .failure(message: "Failed to gain security access for folder.")
         }
+        
+        print("[resolveBookmark] Successfully started accessing security scoped resource")
         
         let indexURL = resolvedURL.appendingPathComponent("photo-index.json")
         
         return .success(folderURL: resolvedURL, indexURL: indexURL)
     } catch {
+        print("[resolveBookmark] Error: \(error.localizedDescription)")
         return .failure(message: error.localizedDescription)
     }
 }
@@ -261,11 +268,18 @@ struct PhotoBrowserView: View {
     }
     
     // MARK: - Helper to load image with proper resource management
-    private func loadImage(from url: URL) -> UIImage? {
-        guard url.startAccessingSecurityScopedResource() else { return nil }
-        defer { url.stopAccessingSecurityScopedResource() }
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+    private func loadImage(from url: URL, folderURL: URL) -> UIImage? {
+        // Don't start/stop on individual file - rely on folder access already established
+        guard let data = try? Data(contentsOf: url) else {
+            print("[loadImage] Failed to load data from: \(url.path)")
+            return nil
+        }
+        guard let image = UIImage(data: data) else {
+            print("[loadImage] Failed to create UIImage from data")
+            return nil
+        }
+        print("[loadImage] Successfully loaded image from: \(url.lastPathComponent)")
+        return image
     }
     
     private func mainContent(folderURL: URL, indexURL: URL) -> some View {
@@ -291,7 +305,7 @@ struct PhotoBrowserView: View {
                             NavigationStack {
                                 VStack {
                                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                    if let uiImage = loadImage(from: imgURL) {
+                                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
                                         ZoomableImageView(uiImage: uiImage)
                                         Text(entry.name).font(.headline)
                                     } else {
@@ -338,7 +352,7 @@ struct PhotoBrowserView: View {
             Group {
                 if let entry = selected {
                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                    if let uiImage = loadImage(from: imgURL) {
+                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
                         VStack {
                             Image(uiImage: uiImage)
                                 .resizable()
@@ -544,11 +558,18 @@ struct FilteredPhotoBrowserView: View {
     }
     
     // MARK: - Helper to load image with proper resource management
-    private func loadImage(from url: URL) -> UIImage? {
-        guard url.startAccessingSecurityScopedResource() else { return nil }
-        defer { url.stopAccessingSecurityScopedResource() }
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+    private func loadImage(from url: URL, folderURL: URL) -> UIImage? {
+        // Don't start/stop on individual file - rely on folder access already established
+        guard let data = try? Data(contentsOf: url) else {
+            print("[FilteredPhotoBrowserView.loadImage] Failed to load data from: \(url.path)")
+            return nil
+        }
+        guard let image = UIImage(data: data) else {
+            print("[FilteredPhotoBrowserView.loadImage] Failed to create UIImage from data")
+            return nil
+        }
+        print("[FilteredPhotoBrowserView.loadImage] Successfully loaded image from: \(url.lastPathComponent)")
+        return image
     }
     
     private func mainContent(folderURL: URL, indexURL: URL) -> some View {
@@ -574,7 +595,7 @@ struct FilteredPhotoBrowserView: View {
                             NavigationStack {
                                 VStack {
                                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                    if let uiImage = loadImage(from: imgURL) {
+                                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
                                         ZoomableImageView(uiImage: uiImage)
                                         Text(entry.name).font(.headline)
                                     } else {
@@ -621,7 +642,7 @@ struct FilteredPhotoBrowserView: View {
             Group {
                 if let entry = selected {
                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                    if let uiImage = loadImage(from: imgURL) {
+                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
                         VStack {
                             Image(uiImage: uiImage)
                                 .resizable()
