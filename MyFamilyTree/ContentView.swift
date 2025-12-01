@@ -1,6 +1,6 @@
 //
-//  ContentView.swift
-//  MyFamilyTree
+//  ContentView.swift
+//  MyFamilyTree
 //
 
 import SwiftUI
@@ -17,13 +17,6 @@ import Foundation
 // TempExportDocument is defined in FileHandling.swift
 
 struct ContentView: View {
-    /*
-     What is @ObservedObject: A SwiftUI property wrapper that lets a view subscribe to an external observable object (an instance of a class that conforms to ObservableObject).
-     • Why it’s used: When any @Published property inside the observed object changes, SwiftUI will re-render the parts of the view that depend on it.
-     • How it works:
-       • Your object class adopts ObservableObject.
-       • Properties you want to trigger UI updates are marked with @Published.
-     */
     @ObservedObject var globals = GlobalVariables.shared
     @ObservedObject private var dataManager = FamilyDataManager.shared
     
@@ -50,7 +43,7 @@ struct ContentView: View {
     @State private var showNamePrompt = false
     @State private var tempNameInput = ""
     
-    @State private var pendingPhotoName: String = ""   // optional; set name before importing
+    @State private var pendingPhotoName: String = ""  // optional; set name before importing
     
     @State private var bulkText = ""
     @State private var showBulkEditor = false
@@ -68,7 +61,7 @@ struct ContentView: View {
     @State private var exportingNow = false
     @State private var exportDoc = TempExportDocument(data: Data())
     @State private var exportType: UTType = .plainText
-    @State private var exportName: String = "Export"
+    @State private var exportName = "Export"
     
     // Alerts
     @State private var showAlert = false
@@ -109,7 +102,7 @@ struct ContentView: View {
         if let url = resolveFolderURL(showError: false) {
             return url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         } else if let url = globals.selectedFolderURL {
-             // Fallback to transient URL if bookmark is gone
+            // Fallback to transient URL if bookmark is gone
             return url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         } else {
             return "None selected"
@@ -159,9 +152,7 @@ struct ContentView: View {
         return []
     }
     
-    // ========== MODIFICATION: This is the core bookmark logic ==========
-    // This function loads the persistent bookmark data and creates a new
-    // "live" security-scoped URL from it.
+    // ========== This is the core bookmark logic (UNCHANGED) ==========
     private func resolveFolderURL(showError: Bool) -> URL? {
         // 1. Get the saved permission data
         guard let bookmarkData = UserDefaults.standard.data(forKey: "selectedFolderBookmark") else {
@@ -176,13 +167,11 @@ struct ContentView: View {
         do {
             var isStale = false
             // 2. Re-create a NEW, "live" URL from the permission data
-            // For iOS, options must be []
             let resolvedURL = try URL(resolvingBookmarkData: bookmarkData, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
             
             if isStale {
                 // If the bookmark is stale, we should re-save it.
                 print("[ContentView] Bookmark was stale, attempting to refresh...")
-                // === THE FIX IS HERE: We save a full bookmark, not a minimal one ===
                 let newBookmarkData = try resolvedURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
                 UserDefaults.standard.set(newBookmarkData, forKey: "selectedFolderBookmark")
                 print("[ContentView] Refreshed stale bookmark.")
@@ -363,7 +352,7 @@ struct ContentView: View {
                 // Prevent overlapping presentations
                 guard !isPresentingTransition else { return }
                 isPresentingTransition = true
-                // Present the JSON chooser for append
+                // Guard against re-entry while chooser or file handling is active
                 guard !showJSONAppendChooser && !showFileHandling else { return }
                 showJSONAppendChooser = true
             }
@@ -548,11 +537,12 @@ struct ContentView: View {
                     exportingNow = false
                 }
             }
+            // FIX: Corrected switch statement to be exhaustive
             .onReceive(globals.$exportPayload) { newValue in
                 switch newValue {
                 case .none:
                     break
-                default:
+                case .text, .json, .image:
                     prepareExport(for: newValue)
                     guard !exportingNow else { return }
                     exportingNow = true
@@ -650,7 +640,6 @@ struct ContentView: View {
                             
                             do {
                                 // 1. Get the bookmark data (the permission)
-                                // ========== THIS IS THE FIX: Use [] (full bookmark) instead of .minimalBookmark ==========
                                 let bookmarkData = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
                                 
                                 // 2. Save this data persistently
@@ -691,7 +680,7 @@ struct ContentView: View {
                                 }
                                 Task.detached(priority: .utility) {
                                     if let data = try? Data(contentsOf: url),
-                                       let preview = String(data: data, encoding: .utf8) {
+                                        let preview = String(data: data, encoding: .utf8) {
                                         let clipped = String(preview.prefix(2000))
                                         await MainActor.run {
                                             globals.openedJSONPreview = clipped
@@ -728,7 +717,7 @@ struct ContentView: View {
                                 }
                                 Task.detached(priority: .utility) {
                                     if let data = try? Data(contentsOf: url),
-                                       let preview = String(data: data, encoding: .utf8) {
+                                        let preview = String(data: data, encoding: .utf8) {
                                         await MainActor.run {
                                             globals.openedJSONPreview = String(preview.prefix(2000))
                                         }
@@ -748,13 +737,13 @@ struct ContentView: View {
                         }
                     }
                 }
-                // ========== MODIFICATION: Pass folderBookmark ==========
+                // ========== FINAL STABLE PASS: RAW BOOKMARK DATA IS USED ==========
                 .sheet(isPresented: $showGallery) {
                     // Get the raw bookmark data
                     if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
                         if #available(iOS 16.0, *) {
                             PhotoBrowserView(
-                                folderBookmark: bookmark // <-- Pass the bookmark DATA
+                                folderBookmark: bookmark // Pass the bookmark DATA
                             )
                         } else {
                             Text("Requires iOS 16.0 or later.")
@@ -762,7 +751,6 @@ struct ContentView: View {
                         }
                     } else {
                         // This will now show if the bookmark is missing.
-                        
                         VStack {
                             Text("Could not get permission for the folder.")
                                 .font(.headline)
@@ -773,15 +761,14 @@ struct ContentView: View {
                         }
                     }
                 }
-                // ========== MODIFICATION: Pass folderBookmark ==========
+                // ========== FINAL STABLE PASS: RAW BOOKMARK DATA IS USED ==========
                 .sheet(isPresented: $showFilteredPhotos) {
                     // Get the raw bookmark data
                     if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
-                       
                         
                         if #available(iOS 16.0, *) {
                             FilteredPhotoBrowserView(
-                                folderBookmark: bookmark, // <-- Pass the bookmark DATA
+                                folderBookmark: bookmark, // Pass the bookmark DATA
                                 filterNames: filteredNamesForPhotos
                             )
                         } else {
@@ -884,4 +871,3 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
-
