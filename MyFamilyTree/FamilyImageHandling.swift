@@ -234,6 +234,7 @@ struct PhotoBrowserView: View {
     @State private var selected: PhotoIndexEntry?
     @State private var showDeleteConfirm = false
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
+    @State private var currentImage: UIImage?
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.dismiss) private var dismiss
     
@@ -340,6 +341,14 @@ struct PhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
+                    .onChange(of: selected) { newValue in
+                        if let entry = newValue {
+                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                            currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                        } else {
+                            currentImage = nil
+                        }
+                    }
                 }
             }
             .navigationTitle("Photos")
@@ -351,8 +360,7 @@ struct PhotoBrowserView: View {
         } detail: {
             Group {
                 if let entry = selected {
-                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
+                    if let uiImage = currentImage {
                         VStack {
                             Image(uiImage: uiImage)
                                 .resizable()
@@ -364,18 +372,11 @@ struct PhotoBrowserView: View {
                         }
                         .padding()
                     } else {
-                        VStack {
-                            Image(systemName: "photo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 120, height: 120)
-                                .foregroundColor(.gray)
-                            Text("(Image not found)")
-                                .font(.caption)
-                            Text(entry.name)
-                                .font(.headline)
-                        }
-                        .padding()
+                        ProgressView("Loading...")
+                            .onAppear {
+                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                            }
                     }
                 } else {
                     Text("Select a name")
@@ -461,6 +462,7 @@ struct PhotoBrowserView: View {
             
             if let sel = selected, namesToDeleteSet.contains(sel.fileName) {
                 selected = nil
+                currentImage = nil
             }
             Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
         } catch {
@@ -519,6 +521,7 @@ struct FilteredPhotoBrowserView: View {
     @State private var selected: PhotoIndexEntry?
     @State private var showDeleteConfirm = false
     @State private var pendingDeleteEntries: [PhotoIndexEntry] = []
+    @State private var currentImage: UIImage?
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.dismiss) private var dismiss
 
@@ -630,6 +633,14 @@ struct FilteredPhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
+                    .onChange(of: selected) { newValue in
+                        if let entry = newValue {
+                            let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                            currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                        } else {
+                            currentImage = nil
+                        }
+                    }
                 }
             }
             .navigationTitle("Tree Photos")
@@ -641,8 +652,7 @@ struct FilteredPhotoBrowserView: View {
         } detail: {
             Group {
                 if let entry = selected {
-                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
+                    if let uiImage = currentImage {
                         VStack {
                             Image(uiImage: uiImage)
                                 .resizable()
@@ -654,18 +664,11 @@ struct FilteredPhotoBrowserView: View {
                         }
                         .padding()
                     } else {
-                        VStack {
-                            Image(systemName: "photo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 120, height: 120)
-                                .foregroundColor(.gray)
-                            Text("(Image not found)")
-                                .font(.caption)
-                            Text(entry.name)
-                                .font(.headline)
-                        }
-                        .padding()
+                        ProgressView("Loading...")
+                            .onAppear {
+                                let imgURL = folderURL.appendingPathComponent(entry.fileName)
+                                currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                            }
                     }
                 } else {
                     Text("Select a name")
@@ -751,6 +754,7 @@ struct FilteredPhotoBrowserView: View {
             
             if let sel = selected, namesToDeleteSet.contains(sel.fileName) {
                 selected = nil
+                currentImage = nil
             }
             Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
         } catch {
