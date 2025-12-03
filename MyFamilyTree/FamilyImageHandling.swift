@@ -183,6 +183,90 @@ enum PhotoImportService {
     }
 }
 
+// MARK: - PhotoDetailSheet (Helper for iPhone presentation)
+@available(iOS 16.0, *)
+private struct PhotoDetailSheet: View {
+    let entry: PhotoIndexEntry
+    let folderURL: URL
+    
+    @State private var loadedImage: UIImage?
+    @State private var isLoading = true
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                if isLoading {
+                    ProgressView("Loading...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let uiImage = loadedImage {
+                    ZoomableImageView(uiImage: uiImage)
+                    Text(entry.name).font(.headline)
+                } else {
+                    Image(systemName: "photo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
+                        .foregroundColor(.gray)
+                    Text("(Image not found)")
+                        .font(.caption)
+                    Text(entry.name)
+                        .font(.headline)
+                }
+            }
+            .padding()
+            .navigationTitle(entry.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Exit") { dismiss() }
+                }
+            }
+            .task {
+                await loadImageAsync()
+            }
+        }
+    }
+    
+    @MainActor
+    private func loadImageAsync() async {
+        let imgURL = folderURL.appendingPathComponent(entry.fileName)
+        
+        // Capture the folder URL for security access
+        let folder = folderURL
+        
+        // Load image on background thread with proper security access
+        let image = await Task.detached { () -> UIImage? in
+            // Ensure we have security access for the folder
+            let hasAccess = folder.startAccessingSecurityScopedResource()
+            defer {
+                if hasAccess {
+                    folder.stopAccessingSecurityScopedResource()
+                }
+            }
+            
+            guard let data = try? Data(contentsOf: imgURL) else {
+                print("[PhotoDetailSheet] Failed to load data from: \(imgURL.path)")
+                return nil
+            }
+            guard let image = UIImage(data: data) else {
+                print("[PhotoDetailSheet] Failed to create UIImage from data")
+                return nil
+            }
+            return image
+        }.value
+        
+        loadedImage = image
+        isLoading = false
+        
+        if image != nil {
+            print("[PhotoDetailSheet] Successfully loaded image: \(entry.fileName)")
+        } else {
+            print("[PhotoDetailSheet] Failed to load image: \(entry.fileName)")
+        }
+    }
+}
+
 // MARK: - Access Resolution Utility (Outside the View)
 
 /// Utility to hold the result of the complex bookmark resolution.
@@ -238,7 +322,6 @@ struct PhotoBrowserView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.dismiss) private var dismiss
     
-    @State private var showingDetailSheet = false
     @State private var sheetEntry: PhotoIndexEntry?
 
     init(folderBookmark: Data) {
@@ -261,9 +344,27 @@ struct PhotoBrowserView: View {
             }
         }
         .onDisappear {
-            if case .success(let folderURL, _) = accessStatus {
-                folderURL.stopAccessingSecurityScopedResource()
-                print("[PhotoBrowserView] Stopped security access.")
+            // Only stop security access if no sheet is being presented
+            if sheetEntry == nil {
+                if case .success(let folderURL, _) = accessStatus {
+                    folderURL.stopAccessingSecurityScopedResource()
+                    print("[PhotoBrowserView] Stopped security access.")
+                }
+            }
+        }
+        .onChange(of: sheetEntry) { oldValue, newValue in
+            // If sheet was closed (went from non-nil to nil) AND view is not visible, stop access
+            if oldValue != nil && newValue == nil {
+                if case .success(let folderURL, _) = accessStatus {
+                    // Check if we should stop access (view has disappeared)
+                    // We'll use a small delay to handle the sheet dismissal animation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if self.sheetEntry == nil {
+                            folderURL.stopAccessingSecurityScopedResource()
+                            print("[PhotoBrowserView] Stopped security access after sheet closed.")
+                        }
+                    }
+                }
             }
         }
     }
@@ -291,7 +392,6 @@ struct PhotoBrowserView: View {
                         ForEach(entries) { entry in
                             Button {
                                 sheetEntry = entry
-                                showingDetailSheet = true
                             } label: {
                                 Text(entry.name)
                             }
@@ -301,36 +401,8 @@ struct PhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
-                    .sheet(isPresented: $showingDetailSheet) {
-                        if let entry = sheetEntry {
-                            NavigationStack {
-                                VStack {
-                                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
-                                        ZoomableImageView(uiImage: uiImage)
-                                        Text(entry.name).font(.headline)
-                                    } else {
-                                        Image(systemName: "photo")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 120, height: 120)
-                                            .foregroundColor(.gray)
-                                        Text("(Image not found)")
-                                            .font(.caption)
-                                        Text(entry.name)
-                                            .font(.headline)
-                                    }
-                                }
-                                .padding()
-                                .navigationTitle(entry.name)
-                                .navigationBarTitleDisplayMode(.inline)
-                                .toolbar {
-                                    ToolbarItem(placement: .topBarTrailing) {
-                                        Button("Exit") { showingDetailSheet = false }
-                                    }
-                                }
-                            }
-                        }
+                    .sheet(item: $sheetEntry) { entry in
+                        PhotoDetailSheet(entry: entry, folderURL: folderURL)
                     }
                 } else {
                     List(selection: $selected) {
@@ -370,10 +442,12 @@ struct PhotoBrowserView: View {
                     Text("Select a name")
                 }
             }
-            .task(id: selected) {
-                if let entry = selected {
+            .onChange(of: selected) { oldValue, newValue in
+                if let entry = newValue {
                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
                     currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                } else {
+                    currentImage = nil
                 }
             }
             .toolbar {
@@ -519,7 +593,6 @@ struct FilteredPhotoBrowserView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingDetailSheet = false
     @State private var sheetEntry: PhotoIndexEntry?
 
     private var filterSet: Set<String> {
@@ -547,9 +620,27 @@ struct FilteredPhotoBrowserView: View {
             }
         }
         .onDisappear {
-            if case .success(let folderURL, _) = accessStatus {
-                folderURL.stopAccessingSecurityScopedResource()
-                print("[FilteredPhotoBrowserView] Stopped security access.")
+            // Only stop security access if no sheet is being presented
+            if sheetEntry == nil {
+                if case .success(let folderURL, _) = accessStatus {
+                    folderURL.stopAccessingSecurityScopedResource()
+                    print("[FilteredPhotoBrowserView] Stopped security access.")
+                }
+            }
+        }
+        .onChange(of: sheetEntry) { oldValue, newValue in
+            // If sheet was closed (went from non-nil to nil) AND view is not visible, stop access
+            if oldValue != nil && newValue == nil {
+                if case .success(let folderURL, _) = accessStatus {
+                    // Check if we should stop access (view has disappeared)
+                    // We'll use a small delay to handle the sheet dismissal animation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if self.sheetEntry == nil {
+                            folderURL.stopAccessingSecurityScopedResource()
+                            print("[FilteredPhotoBrowserView] Stopped security access after sheet closed.")
+                        }
+                    }
+                }
             }
         }
     }
@@ -577,7 +668,6 @@ struct FilteredPhotoBrowserView: View {
                         ForEach(entries) { entry in
                             Button {
                                 sheetEntry = entry
-                                showingDetailSheet = true
                             } label: {
                                 Text(entry.name)
                             }
@@ -587,36 +677,8 @@ struct FilteredPhotoBrowserView: View {
                             deleteEntries(at: offsets, folderURL: folderURL, indexURL: indexURL)
                         }
                     }
-                    .sheet(isPresented: $showingDetailSheet) {
-                        if let entry = sheetEntry {
-                            NavigationStack {
-                                VStack {
-                                    let imgURL = folderURL.appendingPathComponent(entry.fileName)
-                                    if let uiImage = loadImage(from: imgURL, folderURL: folderURL) {
-                                        ZoomableImageView(uiImage: uiImage)
-                                        Text(entry.name).font(.headline)
-                                    } else {
-                                        Image(systemName: "photo")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 120, height: 120)
-                                            .foregroundColor(.gray)
-                                        Text("(Image not found)")
-                                            .font(.caption)
-                                        Text(entry.name)
-                                            .font(.headline)
-                                    }
-                                }
-                                .padding()
-                                .navigationTitle(entry.name)
-                                .navigationBarTitleDisplayMode(.inline)
-                                .toolbar {
-                                    ToolbarItem(placement: .topBarTrailing) {
-                                        Button("Exit") { showingDetailSheet = false }
-                                    }
-                                }
-                            }
-                        }
+                    .sheet(item: $sheetEntry) { entry in
+                        PhotoDetailSheet(entry: entry, folderURL: folderURL)
                     }
                 } else {
                     List(selection: $selected) {
@@ -656,10 +718,12 @@ struct FilteredPhotoBrowserView: View {
                     Text("Select a name")
                 }
             }
-            .task(id: selected) {
-                if let entry = selected {
+            .onChange(of: selected) { oldValue, newValue in
+                if let entry = newValue {
                     let imgURL = folderURL.appendingPathComponent(entry.fileName)
                     currentImage = loadImage(from: imgURL, folderURL: folderURL)
+                } else {
+                    currentImage = nil
                 }
             }
             .toolbar {
@@ -790,3 +854,4 @@ struct FilteredPhotoBrowserView: View {
         }
     }
 }
+
