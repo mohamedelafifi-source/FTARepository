@@ -188,9 +188,12 @@ enum PhotoImportService {
 private struct PhotoDetailSheet: View {
     let entry: PhotoIndexEntry
     let folderURL: URL
+    let indexURL: URL
+    let onDelete: () -> Void
     
     @State private var loadedImage: UIImage?
     @State private var isLoading = true
+    @State private var showDeleteConfirm = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -218,13 +221,60 @@ private struct PhotoDetailSheet: View {
             .navigationTitle(entry.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Exit") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    deletePhoto()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will permanently remove the image file and its entry from the index.")
             }
             .task {
                 await loadImageAsync()
             }
+        }
+    }
+    
+    private func deletePhoto() {
+        do {
+            let imgURL = folderURL.appendingPathComponent(entry.fileName)
+            
+            // Delete the image file
+            if imgURL.startAccessingSecurityScopedResource() {
+                defer { imgURL.stopAccessingSecurityScopedResource() }
+                if FileManager.default.fileExists(atPath: imgURL.path) {
+                    try FileManager.default.removeItem(at: imgURL)
+                    print("[PhotoDetailSheet] Deleted image file: \(entry.fileName)")
+                }
+            }
+            
+            // Update the index
+            let allEntries = try StorageManager.shared.loadPhotoIndex(from: indexURL)
+            let newIndex = allEntries.filter { $0.fileName != entry.fileName }
+            
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted]
+            let data = try encoder.encode(newIndex)
+            try data.write(to: indexURL, options: .atomic)
+            
+            print("[PhotoDetailSheet] Updated photo-index.json, removed: \(entry.name)")
+            
+            // Notify parent and dismiss
+            onDelete()
+            dismiss()
+        } catch {
+            print("[PhotoDetailSheet] Delete error: \(error)")
         }
     }
     
@@ -402,7 +452,14 @@ struct PhotoBrowserView: View {
                         }
                     }
                     .sheet(item: $sheetEntry) { entry in
-                        PhotoDetailSheet(entry: entry, folderURL: folderURL)
+                        PhotoDetailSheet(
+                            entry: entry,
+                            folderURL: folderURL,
+                            indexURL: indexURL,
+                            onDelete: {
+                                Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
+                            }
+                        )
                     }
                 } else {
                     List(selection: $selected) {
@@ -678,7 +735,14 @@ struct FilteredPhotoBrowserView: View {
                         }
                     }
                     .sheet(item: $sheetEntry) { entry in
-                        PhotoDetailSheet(entry: entry, folderURL: folderURL)
+                        PhotoDetailSheet(
+                            entry: entry,
+                            folderURL: folderURL,
+                            indexURL: indexURL,
+                            onDelete: {
+                                Task { await loadIndex(folderURL: folderURL, indexURL: indexURL) }
+                            }
+                        )
                     }
                 } else {
                     List(selection: $selected) {
