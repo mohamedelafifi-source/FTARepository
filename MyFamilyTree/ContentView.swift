@@ -500,6 +500,7 @@ struct ContentView: View {
                     if url.pathExtension.lowercased() == "json" { GlobalVariables.shared.selectedJSONURL = url }
                     successMessage = "Saved "
                     showSuccess = true
+                    FamilyDataManager.shared.isDirty = false
                 case .failure(let error):
                     let nsErr = error as NSError
                     if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
@@ -871,3 +872,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+
