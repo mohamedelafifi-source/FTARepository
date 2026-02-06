@@ -4,6 +4,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import QuickLook
 
+// MARK: - Preview Item Wrapper
+struct PreviewItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 struct AttachmentsSheet: View {
     let memberName: String
     let folderBookmark: Data
@@ -12,8 +18,7 @@ struct AttachmentsSheet: View {
     @State private var folderURL: URL?
     @State private var attachments: [URL] = []
     @State private var isPickerPresented = false
-    @State private var previewURL: URL?
-    @State private var showingPreview = false
+    @State private var previewItem: PreviewItem?
     @State private var deleteCandidate: URL?
     @State private var isDeleteConfirmationPresented = false
     @State private var showAlert = false
@@ -62,8 +67,15 @@ struct AttachmentsSheet: View {
                     List {
                         ForEach(attachments, id: \.self) { attachment in
                             Button(action: {
-                                previewURL = attachment
-                                showingPreview = true
+                                // Verify file exists before attempting preview
+                                guard FileManager.default.fileExists(atPath: attachment.path) else {
+                                    errorMessage = "File not found: \(attachment.lastPathComponent)"
+                                    showError = true
+                                    return
+                                }
+                                
+                                // Set the preview item - this will trigger the sheet
+                                previewItem = PreviewItem(url: attachment)
                             }) {
                                 HStack {
                                     Image(systemName: iconName(for: attachment))
@@ -98,13 +110,8 @@ struct AttachmentsSheet: View {
                             deleteCandidate = nil
                         }
                     }
-                    .sheet(isPresented: $showingPreview) {
-                        if let previewURL {
-                            AttachmentPreviewController(url: previewURL)
-                        } else {
-                            Text("Preview is not available.")
-                                .padding()
-                        }
+                    .sheet(item: $previewItem) { item in
+                        AttachmentPreviewController(url: item.url)
                     }
                 }
             }
@@ -283,14 +290,16 @@ struct AttachmentPreviewController: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()
         controller.dataSource = context.coordinator
+        controller.delegate = context.coordinator
         return controller
     }
 
     func updateUIViewController(_ uiViewController: QLPreviewController, context: Context) {
-        // Nothing to update
+        // Refresh the preview if needed
+        uiViewController.reloadData()
     }
 
-    class Coordinator: NSObject, QLPreviewControllerDataSource {
+    class Coordinator: NSObject, QLPreviewControllerDataSource, QLPreviewControllerDelegate {
         let parent: AttachmentPreviewController
 
         init(_ parent: AttachmentPreviewController) {
