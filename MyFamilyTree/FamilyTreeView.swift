@@ -98,6 +98,9 @@ struct FamilyTreeView: View {
     @State private var memberButtonSize: CGSize = .zero
     @State private var isDrawingSuspended = true
     
+    @State private var showAttachments = false
+    @State private var attachmentsMemberName: String = ""
+    
     private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
         var visited = Set<String>()
         var levels: [Int: [FamilyMember]] = [:]
@@ -383,9 +386,16 @@ struct FamilyTreeView: View {
                                     ForEach(group.members, id: \.id) { member in
                                         let isFocused = member.id == manager.focusedMemberId
                                         
-                                        // --- THIS IS THE "TWO-CLICK" FIX ---
+                                        // --- UPDATED BUTTON FOR FOCUS AND ATTACHMENTS ---
                                         Button(action: {
-                                            manager.focusedMemberId = member.id
+                                            if manager.focusedMemberId == nil {
+                                                manager.focusedMemberId = member.id
+                                            } else {
+                                                attachmentsMemberName = member.name
+                                                DispatchQueue.main.async {
+                                                    showAttachments = true
+                                                }
+                                            }
                                         }) {
                                             Text(member.name)
                                                 .padding()
@@ -406,7 +416,7 @@ struct FamilyTreeView: View {
                                                 )
                                         }
                                         .buttonStyle(.plain)
-                                        // --- END OF "TWO-CLICK" FIX ---
+                                        // --- END UPDATED BUTTON ---
                                     }
                                 }
                                 .padding(.horizontal)
@@ -448,5 +458,15 @@ struct FamilyTreeView: View {
             isDrawingSuspended = true
             positionAnchors = [:]
         }
+        .sheet(isPresented: $showAttachments) {
+            if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+                AttachmentsSheet(memberName: attachmentsMemberName, folderBookmark: bookmark) {
+                    showAttachments = false
+                }
+            } else {
+                VStack { Text("Select a storage folder first.") }.padding()
+            }
+        }
     }
 }
+
