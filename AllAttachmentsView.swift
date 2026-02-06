@@ -11,6 +11,7 @@ struct AllAttachmentsView: View {
     @State private var fileURLs: [URL] = []
     @State private var showingPreview: Bool = false
     @State private var previewURL: URL?
+    @State private var isReady: Bool = false
 
     @State private var isAccessing: Bool = false
 
@@ -22,32 +23,40 @@ struct AllAttachmentsView: View {
                         .foregroundColor(.red)
                         .padding()
                 } else if let _ = attachmentsURL {
-                    List {
-                        ForEach(fileURLs, id: \.self) { fileURL in
-                            Button {
-                                previewURL = fileURL
-                                showingPreview = true
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text(fileURL.lastPathComponent)
-                                    Text(memberNamePrefix(from: fileURL.lastPathComponent))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !isReady {
+                            Text("Loading storage…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                        }
+                        List {
+                            ForEach(fileURLs, id: \.self) { fileURL in
+                                Button {
+                                    previewURL = fileURL
+                                    showingPreview = true
+                                } label: {
+                                    VStack(alignment: .leading) {
+                                        Text(fileURL.lastPathComponent)
+                                        Text(memberNamePrefix(from: fileURL.lastPathComponent))
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
+                            .onDelete(perform: deleteFiles)
                         }
-                        .onDelete(perform: deleteFiles)
-                    }
-                    .listStyle(.plain)
-                    .refreshable {
-                        refreshFiles()
-                    }
-                    .sheet(isPresented: $showingPreview) {
-                        if let previewURL, AttachmentPreviewController.isAvailable {
-                            AttachmentPreviewController(url: previewURL)
-                        } else {
-                            Text("Preview is not available for this file.")
-                                .padding()
+                        .listStyle(.plain)
+                        .refreshable {
+                            refreshFiles()
+                        }
+                        .sheet(isPresented: $showingPreview) {
+                            if let previewURL, AttachmentPreviewController.isAvailable {
+                                AttachmentPreviewController(url: previewURL)
+                            } else {
+                                Text("Preview is not available for this file.")
+                                    .padding()
+                            }
                         }
                     }
                 } else {
@@ -79,6 +88,7 @@ struct AllAttachmentsView: View {
             let url = try URL(resolvingBookmarkData: folderBookmark, options: [], bookmarkDataIsStale: &isStale)
             if isStale {
                 errorMessage = "Bookmark data is stale."
+                isReady = false
                 return
             }
             if url.startAccessingSecurityScopedResource() {
@@ -86,15 +96,19 @@ struct AllAttachmentsView: View {
                 folderURL = url
                 do {
                     attachmentsURL = try AttachmentsStorage.ensureAttachmentsFolder(in: url)
+                    isReady = true
                     refreshFiles()
                 } catch {
                     errorMessage = "Failed to create or access Attachments folder: \(error.localizedDescription)"
+                    isReady = false
                 }
             } else {
                 errorMessage = "Failed to access security scoped resource."
+                isReady = false
             }
         } catch {
             errorMessage = "Failed to resolve folder bookmark: \(error.localizedDescription)"
+            isReady = false
         }
     }
     

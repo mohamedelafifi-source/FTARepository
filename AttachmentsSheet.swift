@@ -17,6 +17,9 @@ struct AttachmentsSheet: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
 
+    @State private var isReady: Bool = false
+    @State private var headerMessage: String = "Loading storage…"
+
     var body: some View {
         NavigationView {
             Group {
@@ -24,29 +27,48 @@ struct AttachmentsSheet: View {
                     Text("Loading attachments...")
                         .foregroundColor(.secondary)
                 } else {
-                    List {
-                        ForEach(attachments, id: \.self) { attachment in
-                            Button(action: {
-                                previewURL = attachment
-                                showingPreview = true
-                            }) {
-                                HStack {
-                                    Image(systemName: iconName(for: attachment))
-                                        .foregroundColor(.accentColor)
-                                    Text(attachment.lastPathComponent)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Button(role: .destructive) {
-                                        deleteCandidate = attachment
-                                        isDeleteConfirmationPresented = true
-                                    } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .buttonStyle(BorderlessButtonStyle())
+                    VStack(spacing: 0) {
+                        if !isReady || memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            VStack(spacing: 8) {
+                                if !headerMessage.isEmpty {
+                                    Text(headerMessage)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("No member selected. Please close and try again.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.red)
                                 }
                             }
+                            .padding(.horizontal)
                         }
-                        .onDelete(perform: deleteAttachments)
+                        List {
+                            ForEach(attachments, id: \.self) { attachment in
+                                Button(action: {
+                                    previewURL = attachment
+                                    showingPreview = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: iconName(for: attachment))
+                                            .foregroundColor(.accentColor)
+                                        Text(attachment.lastPathComponent)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            deleteCandidate = attachment
+                                            isDeleteConfirmationPresented = true
+                                        } label: {
+                                            Image(systemName: "trash")
+                                        }
+                                        .buttonStyle(BorderlessButtonStyle())
+                                        .disabled(!isReady || memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    }
+                                }
+                                .disabled(!isReady || memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+                            .onDelete(perform: deleteAttachments)
+                        }
                     }
                     .confirmationDialog(
                         "Are you sure you want to delete \"\(deleteCandidate?.lastPathComponent ?? "")\"?",
@@ -91,6 +113,7 @@ struct AttachmentsSheet: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .disabled(!isReady || memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Add Attachment")
                 }
             }
@@ -109,6 +132,7 @@ struct AttachmentsSheet: View {
                         return
                     }
                     savePickedFile(from: pickedURL, toFolder: folderURL)
+                    refreshList()
                 case .failure:
                     break
                 }
@@ -149,9 +173,16 @@ struct AttachmentsSheet: View {
             if url.startAccessingSecurityScopedResource() {
                 folderURL = url
                 loadAttachments()
+                isReady = true
+                headerMessage = ""
+            } else {
+                isReady = false
+                headerMessage = "Failed to access storage folder."
             }
         } catch {
             folderURL = nil
+            isReady = false
+            headerMessage = "Failed to resolve storage folder."
         }
     }
 
@@ -161,9 +192,15 @@ struct AttachmentsSheet: View {
     }
 
     private func loadAttachments() {
-        guard let folderURL = folderURL else { return }
+        guard let folderURL = folderURL else {
+            isReady = false
+            headerMessage = "Storage folder not accessible."
+            return
+        }
         attachments = AttachmentsStorage.listAttachments(for: memberName, in: folderURL)
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        isReady = true
+        headerMessage = ""
     }
 
     private func refreshList() {

@@ -100,6 +100,8 @@ struct FamilyTreeView: View {
     
     @State private var showAttachments = false
     @State private var attachmentsMemberName: String = ""
+    @State private var attachmentsReady = false
+    @State private var attachmentsFolderBookmark: Data? = nil
     
     private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
         var visited = Set<String>()
@@ -392,9 +394,9 @@ struct FamilyTreeView: View {
                                                 manager.focusedMemberId = member.id
                                             } else {
                                                 attachmentsMemberName = member.name
-                                                DispatchQueue.main.async {
-                                                    showAttachments = true
-                                                }
+                                                attachmentsFolderBookmark = ContentView.currentFolderBookmark()
+                                                print("[FamilyTreeView] Attachments for \(attachmentsMemberName): bookmark=\(attachmentsFolderBookmark != nil)")
+                                                showAttachments = attachmentsFolderBookmark != nil
                                             }
                                         }) {
                                             Text(member.name)
@@ -459,7 +461,7 @@ struct FamilyTreeView: View {
             positionAnchors = [:]
         }
         .sheet(isPresented: $showAttachments) {
-            if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+            if let bookmark = attachmentsFolderBookmark {
                 AttachmentsSheet(memberName: attachmentsMemberName, folderBookmark: bookmark) {
                     showAttachments = false
                 }

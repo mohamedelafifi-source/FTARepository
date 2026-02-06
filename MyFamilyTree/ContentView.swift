@@ -617,6 +617,23 @@ struct ContentView: View {
             .onChange(of: pendingFileHandlingCommand) { old, new in
             }
     }
+    
+    static func currentFolderBookmark() -> Data? {
+        if let data = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+            return data
+        }
+        // Fallback: if a live URL exists, create and persist a bookmark now
+        if let liveURL = GlobalVariables.shared.selectedFolderURL {
+            if liveURL.startAccessingSecurityScopedResource() {
+                defer { liveURL.stopAccessingSecurityScopedResource() }
+                if let data = try? liveURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                    UserDefaults.standard.set(data, forKey: "selectedFolderBookmark")
+                    return data
+                }
+            }
+        }
+        return nil
+    }
 
     var body: some View {
         NavigationStack {
