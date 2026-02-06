@@ -1,6 +1,6 @@
 //
-//  ContentView.swift
-//  MyFamilyTree
+//  ContentView.swift
+//  MyFamilyTree
 //
 
 import SwiftUI
@@ -72,6 +72,8 @@ struct ContentView: View {
     // New state variables for filtered photo view
     @State private var showFilteredPhotos = false
     @State private var filteredNamesForPhotos: [String] = []
+    @State private var showAllAttachments = false  // ← ADDED FOR ATTACHMENTS BROWSER
+    
     // Prevent overlapping Photo imports/presentations
     @State private var isImportingPhoto = false
     
@@ -416,6 +418,7 @@ struct ContentView: View {
             PhotosMenu(
                 showGallery: $showGallery,
                 showFilteredPhotos: $showFilteredPhotos,
+                showAllAttachments: $showAllAttachments,  // ← ADDED BINDING
                 showPhotoImporter: $showPhotoImporter,
                 showNamePrompt: $showNamePrompt,
                 tempNameInput: $tempNameInput,
@@ -627,7 +630,7 @@ struct ContentView: View {
                         FolderPickerView { url in
                             // We must start access to get the bookmark
                             guard url.startAccessingSecurityScopedResource() else {
-                                alertMessage = "Couldn’t access the selected folder. Please try a different location."
+                                alertMessage = "Couldn't access the selected folder. Please try a different location."
                                 showAlert = true
                                 showFolderPicker = false
                                 return
@@ -786,6 +789,25 @@ struct ContentView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+                // ========== NEW: ATTACHMENTS BROWSER SHEET ==========
+                .sheet(isPresented: $showAllAttachments) {
+                    if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
+                        AttachmentsBrowserView(folderBookmark: bookmark)
+                    } else {
+                        VStack(spacing: 20) {
+                            Text("No Storage Folder Selected")
+                                .font(.headline)
+                            Text("Please select a folder in Location menu.")
+                                .multilineTextAlignment(.center)
+                                .foregroundColor(.secondary)
+                            Button("OK") {
+                                showAllAttachments = false
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding()
                     }
                 }
                 .fullScreenCover(isPresented: $showFamilyTree) {

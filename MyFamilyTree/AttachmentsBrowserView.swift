@@ -2,6 +2,8 @@
 //  AttachmentsBrowserView.swift
 //  MyFamilyTree
 //
+//  Created by Mohamed El Afifi on 2/6/26.
+//
 //  Browse all attachments from the Attachments folder
 //
 
