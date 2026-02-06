@@ -1,3 +1,5 @@
+//To handle the storage of the photos and pdfs attached to a member
+//-------------------------------------------------------------------
 import Foundation
 import UniformTypeIdentifiers
 

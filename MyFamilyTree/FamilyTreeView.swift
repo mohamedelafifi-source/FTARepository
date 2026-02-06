@@ -11,6 +11,7 @@
 // 5. Replaced complex closure in Canvas with simple 'if/else'
 //    to fix compiler crash.
 // 6. Corrected all typos (mmems, missing braces, etc.)
+// 7. Fixed duplicate code issue
 
 import SwiftUI
 import Foundation
@@ -89,6 +90,12 @@ struct SpouseConnectorOverlay: View {
 }
 
 
+// MARK: - Attachment Member Wrapper
+struct AttachmentMember: Identifiable {
+    let id = UUID()
+    let name: String
+}
+
 // MARK: - FamilyTreeView
 struct FamilyTreeView: View {
     @ObservedObject var manager = FamilyDataManager.shared
@@ -98,8 +105,8 @@ struct FamilyTreeView: View {
     @State private var memberButtonSize: CGSize = .zero
     @State private var isDrawingSuspended = true
     
-    @State private var showAttachments = false
-    @State private var attachmentsMemberName: String = ""
+    @State private var selectedMember: AttachmentMember? = nil
+
     
     private func buildAllLevels(from dict: [String: FamilyMember]) -> [LevelGroup] {
         var visited = Set<String>()
@@ -391,10 +398,9 @@ struct FamilyTreeView: View {
                                             if manager.focusedMemberId == nil {
                                                 manager.focusedMemberId = member.id
                                             } else {
-                                                attachmentsMemberName = member.name
-                                                DispatchQueue.main.async {
-                                                    showAttachments = true
-                                                }
+                                                print("DEBUG: Clicked member name: '\(member.name)'")
+                                                selectedMember = AttachmentMember(name: member.name)
+                                                print("DEBUG: Set selectedMember to: '\(selectedMember?.name ?? "nil")'")
                                             }
                                         }) {
                                             Text(member.name)
@@ -458,13 +464,29 @@ struct FamilyTreeView: View {
             isDrawingSuspended = true
             positionAnchors = [:]
         }
-        .sheet(isPresented: $showAttachments) {
+        .sheet(item: $selectedMember) { member in
+            let _ = print("DEBUG SHEET: Creating sheet for member: '\(member.name)'")
+            
             if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
-                AttachmentsSheet(memberName: attachmentsMemberName, folderBookmark: bookmark) {
-                    showAttachments = false
+                AttachmentsSheet(
+                    memberName: member.name,
+                    folderBookmark: bookmark
+                ) {
+                    selectedMember = nil
                 }
             } else {
-                VStack { Text("Select a storage folder first.") }.padding()
+                VStack(spacing: 20) {
+                    Text("No Storage Folder Selected")
+                        .font(.headline)
+                    Text("Please select a folder to store attachments in Settings.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Button("OK") {
+                        selectedMember = nil
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
             }
         }
     }

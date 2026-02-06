@@ -1,3 +1,5 @@
+//Adding and displaying the attachments linked to a member
+//---------------------------------------------------------
 import SwiftUI
 import UniformTypeIdentifiers
 import QuickLook
@@ -16,13 +18,46 @@ struct AttachmentsSheet: View {
     @State private var isDeleteConfirmationPresented = false
     @State private var showAlert = false
     @State private var alertMessage = ""
+    @State private var showError = false
+    @State private var errorMessage = ""
 
     var body: some View {
+        let _ = print("DEBUG: AttachmentsSheet created with memberName: '\(memberName)'")
+        
         NavigationView {
             Group {
-                if folderURL == nil {
-                    Text("Loading attachments...")
-                        .foregroundColor(.secondary)
+                if memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 60))
+                            .foregroundColor(.orange)
+                        Text("No Member Selected")
+                            .font(.headline)
+                        Text("Please close this sheet and try selecting a member again.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                } else if folderURL == nil {
+                    VStack(spacing: 20) {
+                        ProgressView()
+                        Text("Loading attachments...")
+                            .foregroundColor(.secondary)
+                    }
+                } else if attachments.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 60))
+                            .foregroundColor(.secondary)
+                        Text("No attachments yet")
+                            .font(.headline)
+                        Text("Tap the + button to add photos or PDFs")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
                 } else {
                     List {
                         ForEach(attachments, id: \.self) { attachment in
@@ -73,7 +108,7 @@ struct AttachmentsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Attachments for \(memberName)")
+            .navigationTitle(memberName.isEmpty ? "Attachments" : "Attachments for \(memberName)")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
@@ -109,8 +144,9 @@ struct AttachmentsSheet: View {
                         return
                     }
                     savePickedFile(from: pickedURL, toFolder: folderURL)
-                case .failure:
-                    break
+                case .failure(let error):
+                    errorMessage = "Failed to import file: \(error.localizedDescription)"
+                    showError = true
                 }
             }
             .onAppear {
@@ -123,6 +159,11 @@ struct AttachmentsSheet: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(alertMessage)
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
             }
         }
     }
@@ -144,14 +185,19 @@ struct AttachmentsSheet: View {
         do {
             let url = try URL(resolvingBookmarkData: folderBookmark, options: [], bookmarkDataIsStale: &isStale)
             if isStale {
-                // Could recreate bookmark here if needed, but skipping.
+                // Could recreate bookmark here if needed
+                print("Warning: Bookmark is stale")
             }
             if url.startAccessingSecurityScopedResource() {
                 folderURL = url
                 loadAttachments()
+            } else {
+                errorMessage = "Failed to access the storage folder. Please reselect it in Settings."
+                showError = true
             }
         } catch {
-            folderURL = nil
+            errorMessage = "Failed to access storage folder: \(error.localizedDescription)"
+            showError = true
         }
     }
 
@@ -171,25 +217,37 @@ struct AttachmentsSheet: View {
     }
 
     private func savePickedFile(from sourceURL: URL, toFolder folderURL: URL) {
+        // Start accessing the security-scoped resource
+        guard sourceURL.startAccessingSecurityScopedResource() else {
+            errorMessage = "Failed to access the selected file."
+            showError = true
+            return
+        }
+        defer { sourceURL.stopAccessingSecurityScopedResource() }
+        
         let ext = sourceURL.pathExtension
         let destURL = AttachmentsStorage.nextAttachmentURL(for: memberName, originalExtension: ext, in: folderURL)
+        
         do {
             try AttachmentsStorage.savePickedFile(from: sourceURL, to: destURL)
+            
+            // Verify the file was saved correctly
             let attrs = try FileManager.default.attributesOfItem(atPath: destURL.path)
             if let size = attrs[.size] as? NSNumber, size.intValue > 0 {
                 refreshList()
             } else {
+                // Empty file, remove it
                 try? FileManager.default.removeItem(at: destURL)
-                alertMessage = "Failed to save attachment (empty file)."
-                showAlert = true
+                errorMessage = "Failed to save attachment (empty file)."
+                showError = true
             }
         } catch {
-            // Ignore errors silently
+            errorMessage = "Failed to save attachment: \(error.localizedDescription)"
+            showError = true
         }
     }
 
     private func deleteAttachments(at offsets: IndexSet) {
-        guard let folderURL = folderURL else { return }
         let urlsToDelete = offsets.compactMap { attachments[safe: $0] }
         for url in urlsToDelete {
             delete(attachment: url)
@@ -201,7 +259,8 @@ struct AttachmentsSheet: View {
         do {
             try FileManager.default.removeItem(at: url)
         } catch {
-            // ignore errors silently
+            errorMessage = "Failed to delete attachment: \(error.localizedDescription)"
+            showError = true
         }
         refreshList()
         deleteCandidate = nil
@@ -247,3 +306,4 @@ struct AttachmentPreviewController: UIViewControllerRepresentable {
         }
     }
 }
+
