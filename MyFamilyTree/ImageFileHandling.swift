@@ -256,6 +256,7 @@ struct ImagesListView: View {
         .navigationTitle("Saved Images")
     }
 }
+
 /////
 // MARK: - Photo Handling for StorageManager
 //

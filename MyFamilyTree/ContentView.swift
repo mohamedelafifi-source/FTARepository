@@ -36,20 +36,11 @@ struct ContentView: View {
     // UI state
     @State private var showFolderPicker = false
     @State private var showJSONPicker = false
-    @State private var showGallery = false
-    @State private var showPhotoImporter = false
-    @State private var pickedItem: PhotosPickerItem?
-    //To enter the person name
-    @State private var showNamePrompt = false
-    @State private var tempNameInput = ""
-    
-    @State private var pendingPhotoName: String = ""  // optional; set name before importing
-    
-    @State private var bulkText = ""
     @State private var showBulkEditor = false
     @State private var showIndividualEntry = false
     @State private var showFamilyTree = false
     @State private var showFileHandling = false
+    @State private var bulkText = ""
     @State private var treeDetent: PresentationDetent = .large
     
     @State private var originalMembers: [String: FamilyMember] = [:]
@@ -70,12 +61,7 @@ struct ContentView: View {
     @State private var successMessage = ""
     
     // New state variables for filtered photo view
-    @State private var showFilteredPhotos = false
-    @State private var filteredNamesForPhotos: [String] = []
     @State private var showAllAttachments = false  // ← ADDED FOR ATTACHMENTS BROWSER
-    
-    // Prevent overlapping Photo imports/presentations
-    @State private var isImportingPhoto = false
     
     @State private var isHandlingJSONPick = false
     
@@ -88,9 +74,6 @@ struct ContentView: View {
     
     // Added state to prevent overlapping presentation transitions
     @State private var isPresentingTransition = false
-    
-    // Added state for reset photo index confirmation dialog
-    @State private var showResetPhotoIndexConfirm = false
     
     enum EntryMode: String, CaseIterable {
         case bulk = "Bulk"
@@ -222,7 +205,7 @@ struct ContentView: View {
             throw PhotoIndexError.ensureFailed(error)
         }
     }
-    
+
     private func prepareExport(for payload: ExportPayload) {
         switch payload {
         case .none:
@@ -243,55 +226,6 @@ struct ContentView: View {
         }
     }
 
-    private func handlePickedItem(_ item: PhotosPickerItem) async {
-        defer { pickedItem = nil }
-        
-        // Get the "live" folder URL
-        guard let folder = resolveFolderURL(showError: true) else {
-            alertMessage = "No storage folder selected. Please choose a folder from the Location menu."
-            showAlert = true
-            return
-        }
-        
-        // Get the "live" index URL with explicit error
-        let index: URL
-        do {
-            index = try currentPhotoIndexURL()
-        } catch {
-            alertMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            showAlert = true
-            return
-        }
-        
-        do {
-            // We must start access before calling the import service
-            // NOTE: The import service will ALSO start/stop its own access
-            // but we do it here to be safe.
-            guard folder.startAccessingSecurityScopedResource() else {
-                throw CocoaError(.fileReadNoPermission)
-            }
-            
-            defer { folder.stopAccessingSecurityScopedResource() }
-            
-            let result = try await PhotoImportService.importFromPhotos(
-                item: item,
-                folderURL: folder,
-                currentIndexURL: index,
-                personName: pendingPhotoName
-            )
-            // Keep photo index separate; do not overwrite tree JSON URL here.
-            successMessage = "Imported"
-            showSuccess = true
-        } catch {
-            let nsErr = error as NSError
-            if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
-                // user cancelled picker
-            } else {
-                alertMessage = error.localizedDescription
-                showAlert = true
-            }
-        }
-    }
     //=========
     //MAIN Menu
     //=========
@@ -416,61 +350,11 @@ struct ContentView: View {
     private var photosToolbarMenu: some View {
         Menu {
             PhotosMenu(
-                showGallery: $showGallery,
-                showFilteredPhotos: $showFilteredPhotos,
-                showAllAttachments: $showAllAttachments,  // ← ADDED BINDING
-                showPhotoImporter: $showPhotoImporter,
-                showNamePrompt: $showNamePrompt,
-                tempNameInput: $tempNameInput,
-                filteredNamesForPhotos: $filteredNamesForPhotos,
-                alertMessage: $alertMessage,
-                showAlert: $showAlert,
-                showSuccess: $showSuccess,
-                successMessage: $successMessage,
-                showResetConfirm: $showResetPhotoIndexConfirm
+                showAllAttachments: $showAllAttachments
             )
         } label: { Text("Photos") }
-        .disabled(!isFolderSelected || isImportingPhoto)
+        .disabled(!isFolderSelected)
         .font(.footnote)
-        .confirmationDialog(
-            "Reset Photo Index?",
-            isPresented: $showResetPhotoIndexConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete and Recreate", role: .destructive) {
-                guard let folder = resolveFolderURL(showError: true) else {
-                    alertMessage = "Please select a storage folder first (Location → Select Storage Folder…)."
-                    showAlert = true
-                    return
-                }
-                guard folder.startAccessingSecurityScopedResource() else {
-                    alertMessage = "Could not get permission to modify the folder."
-                    showAlert = true
-                    return
-                }
-                defer { folder.stopAccessingSecurityScopedResource() }
-                do {
-                    let idx = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                    if FileManager.default.fileExists(atPath: idx.path) {
-                        try FileManager.default.removeItem(at: idx)
-                    }
-                    let recreated = try StorageManager.shared.ensurePhotoIndex(in: folder, fileName: "photo-index.json")
-                    let attrs = try? FileManager.default.attributesOfItem(atPath: recreated.path)
-                    let fileSize = (attrs?[.size] as? NSNumber)?.intValue ?? 0
-                    if fileSize == 0 {
-                        try Data("[]".utf8).write(to: recreated, options: .atomic)
-                    }
-                    successMessage = "Photo index reset."
-                    showSuccess = true
-                } catch {
-                    alertMessage = "Failed to reset photo index: \(error.localizedDescription)"
-                    showAlert = true
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This will delete all photo index entries and recreate an empty index. This cannot be undone.")
-        }
     }
     
     // This helper property builds the main view content
@@ -488,7 +372,6 @@ struct ContentView: View {
     @ViewBuilder
     private var contentHost: some View {
         mainViewHierarchy // Call the main view
-            .photosPicker(isPresented: $showPhotoImporter, selection: $pickedItem, matching: .images)
             .fileExporter(
                 isPresented: showExporterBinding,
                 document: exportDoc,
@@ -556,14 +439,6 @@ struct ContentView: View {
                             exportingNow = false
                         }
                     }
-                }
-            }
-            .onChange(of: pickedItem) { _, newItem in
-                guard let item = newItem, !isImportingPhoto else { return }
-                isImportingPhoto = true
-                Task {
-                    await handlePickedItem(item)
-                    await MainActor.run { isImportingPhoto = false }
                 }
             }
             .onChange(of: showJSONPicker) { oldValue, newValue in
@@ -652,13 +527,14 @@ struct ContentView: View {
                                 
                                 // 3. Set this for immediate use by other functions
                                 globals.selectedFolderURL = url
-                                
+                              
                                 // 4. Ensure a photo index exists
                                 do {
                                     _ = try StorageManager.shared.ensurePhotoIndex(in: url, fileName: "photo-index.json")
                                 } catch {
                                     // Non-blocking
                                 }
+                                
 
                             } catch {
                                 alertMessage = "Failed to save folder permission: \(error.localizedDescription)"
@@ -741,56 +617,6 @@ struct ContentView: View {
                         }
                     }
                 }
-                // ========== FINAL STABLE PASS: RAW BOOKMARK DATA IS USED ==========
-                .sheet(isPresented: $showGallery) {
-                    // Get the raw bookmark data
-                    if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
-                        if #available(iOS 16.0, *) {
-                            PhotoBrowserView(
-                                folderBookmark: bookmark // Pass the bookmark DATA
-                            )
-                        } else {
-                            Text("Requires iOS 16.0 or later.")
-                                .padding()
-                        }
-                    } else {
-                        // This will now show if the bookmark is missing.
-                        VStack {
-                            Text("Could not get permission for the folder.")
-                                .font(.headline)
-                                .padding()
-                            Text("Please go to 'Location' and re-select your folder.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                // ========== FINAL STABLE PASS: RAW BOOKMARK DATA IS USED ==========
-                .sheet(isPresented: $showFilteredPhotos) {
-                    // Get the raw bookmark data
-                    if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
-                        
-                        if #available(iOS 16.0, *) {
-                            FilteredPhotoBrowserView(
-                                folderBookmark: bookmark, // Pass the bookmark DATA
-                                filterNames: filteredNamesForPhotos
-                            )
-                        } else {
-                            Text("Requires iOS 16.0 or later.")
-                                .padding()
-                        }
-                    } else {
-                        // This will now show if the bookmark is missing.
-                        VStack {
-                            Text("Could not get permission for the folder.")
-                                .font(.headline)
-                                .padding()
-                            Text("Please go to 'Location' and re-select your folder.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
                 // ========== NEW: ATTACHMENTS BROWSER SHEET ==========
                 .sheet(isPresented: $showAllAttachments) {
                     if let bookmark = UserDefaults.standard.data(forKey: "selectedFolderBookmark") {
@@ -863,28 +689,6 @@ struct ContentView: View {
                         showConfirmation: $showConfirmation,
                         showSuccess: $showSuccess,
                         successMessage: $successMessage
-                    )
-                }
-                // Modified to dismiss keyboard before showing photo importer to avoid layout conflicts
-                .sheet(isPresented: $showNamePrompt) {
-                    NamePromptSheet(
-                        isPresented: $showNamePrompt,
-                        tempNameInput: $tempNameInput,
-                        onConfirm: { name in
-                            pendingPhotoName = name
-                            // Dismiss any active keyboard before presenting PhotosPicker
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                showPhotoImporter = true
-                            }
-                        },
-                        existingNames: {
-                            if let idx = try? currentPhotoIndexURL(), let names = try? readIndexNames(from: idx) {
-                                return names
-                            } else {
-                                return []
-                            }
-                        }()
                     )
                 }
         }
